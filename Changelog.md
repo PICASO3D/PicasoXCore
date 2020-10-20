@@ -1,0 +1,4 @@
+Changelog PicasoXCore
+====================
+
+- [Not documented]

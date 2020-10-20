@@ -1,0 +1,25 @@
+main ICON "PicasoXCore.ico"
+
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "080904E4"
+    BEGIN
+      VALUE "CompanyName", "PICASO 3D"
+      VALUE "FileDescription", "Slicing engine"
+      VALUE "FileVersion", "1.0"
+      VALUE "InternalName", "PicasoXCore"
+      VALUE "LegalCopyright", "Picaso 3D"
+      VALUE "OriginalFilename", "PicasoXCore.exe"
+      VALUE "ProductName", "PicasoXCore"
+      VALUE "ProductVersion", "1.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x809, 1252
+  END
+END
