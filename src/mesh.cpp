@@ -196,11 +196,6 @@ int Mesh::getFaceIdxWithPoints(int idx0, int idx1, int notFaceIdx, int notFaceVe
     {
         int candidateVertex = -1;
         {// find third vertex belonging to the face (besides idx0 and idx1)
-        
-            //for (candidateVertex = 0; candidateVertex<3; candidateVertex++)
-            //    if (faces[candidateFace].vertex_index[candidateVertex] != idx0 && faces[candidateFace].vertex_index[candidateVertex] != idx1)
-            //        break;
-        
             int idx = 2;
             while( idx != -1 ) {
                 if (faces[candidateFace].vertex_index[idx] != idx0 && faces[candidateFace].vertex_index[idx] != idx1) {
