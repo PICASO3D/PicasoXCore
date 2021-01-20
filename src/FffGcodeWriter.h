@@ -492,7 +492,13 @@ private:
      * \param skin_part The skin part for which to create gcode
      * \return Whether this function added anything to the layer plan
      */
-    bool processSkinPart(const SliceDataStorage& storage, LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const size_t extruder_nr, const PathConfigStorage::MeshPathConfigs& mesh_config, const SkinPart& skin_part) const;
+    bool processSkinPart(
+		const SliceDataStorage& storage, 
+		LayerPlan& gcode_layer, 
+		const SliceMeshStorage& mesh, 
+		const size_t extruder_nr, 
+		const PathConfigStorage::MeshPathConfigs& mesh_config, 
+		const SkinPart& skin_part) const;
 
     /*!
      * Add the extra skin walls
@@ -548,7 +554,25 @@ private:
      * \param[out] concentric_perimeter_gaps The perimeter gaps output which are generated when the pattern is concentric
      * \param[out] added_something Whether this function added anything to the layer plan
      */
-    void processTopBottom(const SliceDataStorage& storage, LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const size_t extruder_nr, const PathConfigStorage::MeshPathConfigs& mesh_config, const SkinPart& skin_part, Polygons& concentric_perimeter_gaps, bool& added_something) const;
+	void processTopBottom(
+		const SliceDataStorage& storage,
+		LayerPlan& gcode_layer,
+		const SliceMeshStorage& mesh,
+		const size_t extruder_nr,
+		const PathConfigStorage::MeshPathConfigs& mesh_config,
+		const SkinPart& skin_part,
+		Polygons& concentric_perimeter_gaps,
+		bool& added_something) const;
+
+	void processFlooring(
+		const SliceDataStorage& storage,
+		LayerPlan& gcode_layer,
+		const SliceMeshStorage& mesh,
+		const size_t extruder_nr,
+		const PathConfigStorage::MeshPathConfigs& mesh_config,
+		const SkinPart& skin_part,
+		Polygons& concentric_perimeter_gaps,
+		bool& added_something) const;
 
     /*!
      * Process a dense skin feature like roofing or top/bottom

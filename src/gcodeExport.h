@@ -153,6 +153,9 @@ private:
     EGCodeFlavor flavor;
 
     std::vector<Duration> total_print_times; //!< The total estimated print time in seconds for each feature
+
+	TimeEstimateResult total_print_times_pathConfig;
+
     TimeEstimateCalculator estimateCalculator;
     
     bool is_volumetric;
@@ -320,10 +323,9 @@ public:
      * \return total print time in seconds for each feature
      */
     std::vector<Duration> getTotalPrintTimePerFeature();
-    /*!
-     * Get Picaso PrintMode totals
-     */
-    std::vector<double> getPicasoPrintModes(std::vector<Duration> print_times);
+
+	PicasoPrintModeEstimate getPicasoPrintModeEstimate(const Scene& scene, const TimeEstimateResult& estimateResult);
+
     /*!
      * Get the total print time in seconds for the complete print
      * 
@@ -336,12 +338,12 @@ public:
     void writeComment(const std::string& comment);
     void writeTypeComment(const PrintFeatureType& type);
 
-    PicasoSpeedProfile getPicasoSpeedProfile(PrintFeatureType type);
-	PicasoSpeedProfile getPicasoSpeedProfile(PathConfigFeature feature);
-    std::string picasoSpeedProfileToKissComment(PicasoSpeedProfile type);
-    std::string picasoSpeedProfileToString(PicasoSpeedProfile type);
+	Velocity getFeatureSpeed(const Scene& scene, const PathConfigFeature& feature);
 
-    std::string printFeatureTypeToString(PrintFeatureType type);
+    std::string picasoSpeedProfileToKissComment(const PicasoSpeedProfile& type);
+    std::string picasoSpeedProfileToString(const PicasoSpeedProfile& type);
+
+    std::string printFeatureTypeToString(const PrintFeatureType& type);
 
     /*!
      * Write an M82 (absolute) or M83 (relative)

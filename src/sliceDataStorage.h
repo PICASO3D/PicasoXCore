@@ -36,10 +36,20 @@ class SkinPart
 {
 public:
     PolygonsPart outline;           //!< The skinOutline is the area which needs to be 100% filled to generate a proper top&bottom filling. It's filled by the "skin" module.
-    std::vector<Polygons> insets;   //!< The skin can have perimeters so that the skin lines always start at a perimeter instead of in the middle of an infill cell.
+    //std::vector<Polygons> insets;   //!< The skin can have perimeters so that the skin lines always start at a perimeter instead of in the middle of an infill cell.
     Polygons perimeter_gaps; //!< The gaps between the extra skin walls and gaps between the outer skin wall and the inner part inset
-    Polygons inner_infill; //!< The inner infill of the skin with which the area within the innermost inset is filled
-    Polygons roofing_fill; //!< The inner infill which has air directly above
+    //Polygons inner_infill; //!< The inner infill of the skin with which the area within the innermost inset is filled
+    //Polygons roofing_fill; //!< The inner infill which has air directly above
+
+	Polygons roof_outline;
+	Polygons skin_outline;
+	Polygons floor_outline;
+	std::vector<Polygons> roof_insets;
+	std::vector<Polygons> skin_insets;
+	std::vector<Polygons> floor_insets;
+	Polygons roof_inner_infill;
+	Polygons skin_inner_infill;
+	Polygons floor_inner_infill;
 };
 
 
@@ -245,6 +255,7 @@ public:
     std::vector<AngleDegrees> infill_angles; //!< a list of angle values which is cycled through to determine the infill angle of each layer
     std::vector<AngleDegrees> roofing_angles; //!< a list of angle values which is cycled through to determine the roofing angle of each layer
     std::vector<AngleDegrees> skin_angles; //!< a list of angle values which is cycled through to determine the skin angle of each layer
+	std::vector<AngleDegrees> flooring_angles; //!< a list of angle values which is cycled through to determine the flooring angle of each layer
     std::vector<Polygons> overhang_areas; //!< For each layer the areas that are classified as overhang on this mesh.
     std::vector<Polygons> full_overhang_areas; //!< For each layer the full overhang without the tangent of the overhang angle removed, such that the overhang area adjoins the areas of the next layers.
     std::vector<Polygons> unsupported_areas; //!< For each layer the totaly unsupported areas

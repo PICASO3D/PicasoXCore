@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <vector>
+#include <map>
 #include <unordered_map>
 
 #include "PrintFeature.h"
@@ -18,6 +19,181 @@ namespace cura
 
 class Ratio;
 class Settings;
+
+class PicasoSpeedScale
+{
+public:
+	Velocity base_speed;
+	bool allow_scale;
+
+	PicasoSpeedScale()
+		: base_speed(0)
+		, allow_scale(false)
+	{
+	}
+
+	PicasoSpeedScale(Velocity base_speed, bool allow_scale)
+		: base_speed(base_speed)
+		, allow_scale(allow_scale)
+	{
+	}
+};
+
+class PicasoPrintModeEstimate
+{
+public:
+	std::map<size_t, std::vector<Duration>> durations;
+	Duration extra_time;
+	size_t extruder_count;
+	size_t retract_count;
+	size_t zhopp_count;
+
+	PicasoPrintModeEstimate()
+		: durations()
+		, extruder_count(0)
+		, extra_time(0)
+		, retract_count(0)
+		, zhopp_count(0)
+	{
+	}
+
+	PicasoPrintModeEstimate(size_t extruder_count, Duration extra_time, size_t retract_count, size_t zhopp_count)
+		: durations()
+		, extruder_count(extruder_count)
+		, extra_time(extra_time)
+		, retract_count(retract_count)
+		, zhopp_count(zhopp_count)
+	{
+		ReInit(extruder_count);
+	}
+
+	void ReInit(size_t extruder_count)
+	{
+		this->extruder_count = extruder_count;
+		for (size_t n = 0; n < extruder_count; n++)
+		{
+			auto it = durations.find(n);
+			if (it == durations.end())
+			{
+				std::vector<Duration> totals(static_cast<unsigned char>(PicasoPrintMode::NumPicasoPrintModes), 0.0);
+				durations[n] = totals;
+			}
+			else
+			{
+				for (size_t i = 0; i < it->second.size(); i++)
+				{
+					it->second[i] = 0.0;
+				}
+			}
+		}
+	}
+};
+
+
+class TimeEstimateResult
+{
+public:
+	std::map<size_t, std::vector<Duration>> durations;
+	Duration extra_time;
+	size_t extruder_count;
+	size_t retract_count;
+	size_t zhopp_count;
+
+	TimeEstimateResult()
+		: durations()
+		, extruder_count(0)
+		, extra_time(0)
+		, retract_count(0)
+		, zhopp_count(0)
+	{
+	}
+
+	void ReInit(size_t extruder_count)
+	{
+		this->extruder_count = extruder_count;
+		for (size_t n = 0; n < extruder_count; n++)
+		{
+			auto it = durations.find(n);
+			if (it == durations.end())
+			{
+				std::vector<Duration> totals(static_cast<unsigned char>(PathConfigFeature::NumPathConfigFeatures), 0.0);
+				durations[n] = totals;
+			}
+			else
+			{
+				for (size_t i = 0; i < it->second.size(); i++)
+				{
+					it->second[i] = 0.0;
+				}
+			}
+		}
+	}
+
+	TimeEstimateResult(size_t extruder_count, Duration extra_time, size_t retract_count, size_t zhopp_count)
+		: durations()
+		, extruder_count(extruder_count)
+		, extra_time(extra_time)
+		, retract_count(retract_count)
+		, zhopp_count(zhopp_count)
+	{ 
+		ReInit(extruder_count);
+	}
+
+	// for ArcusCommunication::sendPrintTimeMaterialEstimates()
+	std::vector<Duration> getPrintFeatureTypes()
+	{
+		std::vector<Duration> result(static_cast<unsigned char>(PrintFeatureType::NumPrintFeatureTypes), 0.0);
+
+		// Extra time (pause for minimum layer time, etc) is marked as NoneType
+		result[static_cast<unsigned char>(PrintFeatureType::NoneType)] = extra_time;
+
+		for (auto it = durations.begin(); it != durations.end(); ++it)
+		{
+			for (size_t n = 0; n < it->second.size(); n++)
+			{
+				PrintFeatureType pft = PrintFeatureConverter::toPrintFeatureType(static_cast<PathConfigFeature>(n));
+
+				result[static_cast<unsigned char>(pft)] += it->second[n];
+			}
+		}
+
+		return result;
+	}
+
+	void Reset()
+	{
+		this->extra_time = 0;
+		this->retract_count = 0;
+		this->zhopp_count = 0;
+
+		for (auto it = durations.begin(); it != durations.end(); ++it)
+		{
+			for (size_t i = 0; i < it->second.size(); i++)
+			{
+				it->second[i] = 0.0;
+			}
+		}
+	}
+
+	void Add(const TimeEstimateResult& other)
+	{
+		extra_time += other.extra_time;
+		retract_count += other.retract_count;
+		zhopp_count += other.zhopp_count;
+
+		for (auto it = durations.begin(); it != durations.end(); ++it)
+		{
+			auto other_it = other.durations.find(it->first);
+			if (other_it != other.durations.end())
+			{
+				for (size_t i = 0; i < it->second.size(); i++)
+				{
+					it->second[i] += other_it->second[i];
+				}
+			}
+		}
+	}
+};
 
 /*!
  *  The TimeEstimateCalculator class generates a estimate of printing time calculated with acceleration in mind.
@@ -80,6 +256,7 @@ private:
     Velocity max_z_jerk = 0.4;
     Velocity max_e_jerk = 5.0;
     Duration extra_time = 0.0;
+	size_t extruder_count = 1;
 
     int retract_start = 0;
     int retract_end = 0;
@@ -112,6 +289,7 @@ public:
     void reset();
     
     std::vector<Duration> calculate();
+	TimeEstimateResult getTimeEstimateResult();
 private:
     void reverse_pass();
     void forward_pass();

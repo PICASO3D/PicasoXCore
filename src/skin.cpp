@@ -19,6 +19,16 @@
 namespace cura 
 {
 
+coord_t SkinInfillAreaComputation::getRoofingLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr)
+{
+	coord_t roofing_line_width = mesh.settings.get<coord_t>("roofing_line_width");
+	if (layer_nr == 0)
+	{
+		const ExtruderTrain& train_roofing = mesh.settings.get<ExtruderTrain&>("roofing_extruder_nr");
+		roofing_line_width *= train_roofing.settings.get<Ratio>("initial_layer_line_width_factor");
+	}
+	return roofing_line_width;
+}
 coord_t SkinInfillAreaComputation::getSkinLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr)
 {
     coord_t skin_line_width = mesh.settings.get<coord_t>("skin_line_width");
@@ -28,6 +38,16 @@ coord_t SkinInfillAreaComputation::getSkinLineWidth(const SliceMeshStorage& mesh
         skin_line_width *= train_skin.settings.get<Ratio>("initial_layer_line_width_factor");
     }
     return skin_line_width;
+}
+coord_t SkinInfillAreaComputation::getFlooringLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr)
+{
+	coord_t flooring_line_width = mesh.settings.get<coord_t>("flooring_line_width");
+	if (layer_nr == 0)
+	{
+		const ExtruderTrain& train_flooring = mesh.settings.get<ExtruderTrain&>("flooring_extruder_nr");
+		flooring_line_width *= train_flooring.settings.get<Ratio>("initial_layer_line_width_factor");
+	}
+	return flooring_line_width;
 }
 
 coord_t SkinInfillAreaComputation::getWallLineWidth0(const SliceMeshStorage& mesh, const LayerIndex& layer_nr)
@@ -80,22 +100,29 @@ SkinInfillAreaComputation::SkinInfillAreaComputation(const LayerIndex& layer_nr,
 , mesh(mesh)
 , bottom_layer_count(mesh.settings.get<size_t>("bottom_layers"))
 , top_layer_count(mesh.settings.get<size_t>("top_layers"))
+, roofing_layer_count(mesh.settings.get<size_t>("roofing_layer_count"))
+, flooring_layer_count(mesh.settings.get<size_t>("flooring_layer_count"))
 , wall_line_count(mesh.settings.get<size_t>("wall_line_count"))
+, roofing_line_width(getRoofingLineWidth(mesh, layer_nr))
 , skin_line_width(getSkinLineWidth(mesh, layer_nr))
+, flooring_line_width(getFlooringLineWidth(mesh, layer_nr))
 , wall_line_width_0(getWallLineWidth0(mesh, layer_nr))
 , wall_line_width_1(getWallLineWidth1(mesh, layer_nr))
 , wall_line_width_x(getWallLineWidthX(mesh, layer_nr))
 , innermost_wall_line_width((wall_line_count == 1) ? wall_line_width_0 : ((wall_line_count == 2) ? wall_line_width_1 : wall_line_width_x))
 , infill_skin_overlap(getInfillSkinOverlap(mesh, layer_nr, innermost_wall_line_width))
+, roofing_inset_count(mesh.settings.get<size_t>("roofing_outline_count"))
 , skin_inset_count(mesh.settings.get<size_t>("skin_outline_count"))
+, flooring_inset_count(mesh.settings.get<size_t>("flooring_outline_count"))
 , no_small_gaps_heuristic(mesh.settings.get<bool>("skin_no_small_gaps_heuristic"))
 , process_infill(process_infill)
+, optimize_wall_printing_order(mesh.settings.get<bool>("optimize_wall_printing_order"))
 , top_reference_wall_expansion(mesh.settings.get<coord_t>("top_skin_preshrink"))
 , bottom_reference_wall_expansion(mesh.settings.get<coord_t>("bottom_skin_preshrink"))
 , top_skin_expand_distance(mesh.settings.get<coord_t>("top_skin_expand_distance"))
 , bottom_skin_expand_distance(mesh.settings.get<coord_t>("bottom_skin_expand_distance"))
-, top_reference_wall_idx(getReferenceWallIdx(top_reference_wall_expansion))
-, bottom_reference_wall_idx(getReferenceWallIdx(bottom_reference_wall_expansion))
+, top_reference_wall_num(getReferenceWallIdx(top_reference_wall_expansion))
+, bottom_reference_wall_num(getReferenceWallIdx(bottom_reference_wall_expansion))
 {
 }
 
@@ -105,10 +132,10 @@ SkinInfillAreaComputation::SkinInfillAreaComputation(const LayerIndex& layer_nr,
  *
  * this function may only read/write the skin and infill from the *current* layer.
  */
-Polygons SkinInfillAreaComputation::getWalls(const SliceLayerPart& part_here, int layer2_nr, unsigned int wall_idx)
+Polygons SkinInfillAreaComputation::getWalls(const SliceLayerPart& part_here, int layer2_nr, unsigned int wall_num)
 {
     Polygons result;
-    if (layer2_nr >= static_cast<int>(mesh.layers.size()))
+    if (layer2_nr >= static_cast<int>(mesh.layers.size()) || layer2_nr < 0)
     {
         return result;
     }
@@ -117,13 +144,13 @@ Polygons SkinInfillAreaComputation::getWalls(const SliceLayerPart& part_here, in
     {
         if (part_here.boundaryBox.hit(part2.boundaryBox))
         {
-            if (wall_idx <= 0)
+            if (wall_num <= 0)
             {
                 result.add(part2.outline);
             }
-            else if (wall_idx <= part2.insets.size())
+            else if (wall_num <= part2.insets.size())
             {
-                result.add(part2.insets[wall_idx - 1]); // -1 because it's a 1-based index
+                result.add(part2.insets[wall_num - 1]); // -1 because it's a 1-based index
             }
         }
     }
@@ -170,8 +197,6 @@ void SkinInfillAreaComputation::generateSkinsAndInfill()
     {
         SliceLayerPart& part = layer->parts[part_nr];
         generateSkinInsetsAndInnerSkinInfill(&part);
-
-        generateRoofing(part);
     }
 }
 
@@ -259,12 +284,12 @@ void SkinInfillAreaComputation::calculateBottomSkin(const SliceLayerPart& part, 
 {
     if (static_cast<int>(layer_nr - bottom_layer_count) >= 0 && bottom_layer_count > 0)
     {
-        Polygons not_air = getWalls(part, layer_nr - bottom_layer_count, bottom_reference_wall_idx).offset(bottom_reference_wall_expansion);
+        Polygons not_air = getWalls(part, layer_nr - bottom_layer_count, bottom_reference_wall_num).offset(bottom_reference_wall_expansion);
         if (!no_small_gaps_heuristic)
         {
             for (int downskin_layer_nr = layer_nr - bottom_layer_count + 1; downskin_layer_nr < layer_nr; downskin_layer_nr++)
             {
-                not_air = not_air.intersection(getWalls(part, downskin_layer_nr, bottom_reference_wall_idx).offset(bottom_reference_wall_expansion));
+                not_air = not_air.intersection(getWalls(part, downskin_layer_nr, bottom_reference_wall_num).offset(bottom_reference_wall_expansion));
             }
         }
         const double min_infill_area = mesh.settings.get<double>("min_infill_area");
@@ -280,12 +305,12 @@ void SkinInfillAreaComputation::calculateTopSkin(const SliceLayerPart& part, Pol
 {
     if (static_cast<int>(layer_nr + top_layer_count) < static_cast<int>(mesh.layers.size()) && top_layer_count > 0)
     {
-        Polygons not_air = getWalls(part, layer_nr + top_layer_count, top_reference_wall_idx).offset(top_reference_wall_expansion);
+        Polygons not_air = getWalls(part, layer_nr + top_layer_count, top_reference_wall_num).offset(top_reference_wall_expansion);
         if (!no_small_gaps_heuristic)
         {
             for (int upskin_layer_nr = layer_nr + 1; upskin_layer_nr < layer_nr + top_layer_count; upskin_layer_nr++)
             {
-                not_air = not_air.intersection(getWalls(part, upskin_layer_nr, top_reference_wall_idx).offset(top_reference_wall_expansion));
+                not_air = not_air.intersection(getWalls(part, upskin_layer_nr, top_reference_wall_num).offset(top_reference_wall_expansion));
             }
         }
         // Prevent removing top skin layers
@@ -339,12 +364,20 @@ void SkinInfillAreaComputation::applySkinExpansion(const Polygons& original_outl
     // Execute shrinkage and expansion in the same operation
     if (top_outset)
     {
-        upskin = upskin.offset(-top_min_width).offset(top_outset).unionPolygons(upskin).intersection(original_outline);
+        upskin = upskin
+			.offset(-top_min_width)
+			.offset(top_outset)
+			.unionPolygons(upskin)
+			.intersection(original_outline);
     }
 
     if (bottom_outset)
     {
-        downskin = downskin.offset(-bottom_min_width).offset(bottom_outset).unionPolygons(downskin).intersection(original_outline);
+        downskin = downskin
+			.offset(-bottom_min_width)
+			.offset(bottom_outset)
+			.unionPolygons(downskin)
+			.intersection(original_outline);
     }
 }
 
@@ -357,59 +390,176 @@ void SkinInfillAreaComputation::applySkinExpansion(const Polygons& original_outl
  */
 void SkinInfillAreaComputation::generateSkinInsetsAndInnerSkinInfill(SliceLayerPart* part)
 {
+	const size_t wall_line_count = std::min(size_t(2), mesh.settings.get<size_t>("wall_line_count"));
+	const bool bridge_settings_enabled = mesh.settings.get<bool>("bridge_settings_enabled");
+
     for (SkinPart& skin_part : part->skin_parts)
     {
-        generateSkinInsets(skin_part);
-        generateInnerSkinInfill(skin_part);
+		generateSkinPartOutlines(*part, skin_part, roofing_layer_count, flooring_layer_count, wall_line_count);
+
+		skin_part.roof_insets = generateOutlineInsets(skin_part.roof_outline, roofing_line_width, roofing_inset_count);
+		if (!bridge_settings_enabled)
+		{
+			skin_part.floor_insets = generateOutlineInsets(skin_part.floor_outline, flooring_line_width, flooring_inset_count);
+		}
+		skin_part.skin_insets = generateOutlineInsets(skin_part.skin_outline, skin_line_width, skin_inset_count);
+
+		skin_part.roof_inner_infill = generateInsetsInnerInfill(skin_part.roof_insets, skin_part.roof_outline, roofing_line_width);
+		skin_part.floor_inner_infill = generateInsetsInnerInfill(skin_part.floor_insets, skin_part.floor_outline, flooring_line_width);
+		skin_part.skin_inner_infill = generateInsetsInnerInfill(skin_part.skin_insets, skin_part.skin_outline, skin_line_width);
     }
 }
 
-/*
- * This function is executed in a parallel region based on layer_nr.
- * When modifying make sure any changes does not introduce data races.
- *
- * this function may only read/write the skin and infill from the *current* layer.
- */
-void SkinInfillAreaComputation::generateSkinInsets(SkinPart& skin_part)
+void SkinInfillAreaComputation::generateSkinPartOutlines(
+	SliceLayerPart& layer_part,
+	SkinPart& skin_part, 
+	const size_t skin_roof_layer_count, 
+	const size_t skin_floor_layer_count, 
+	const size_t wall_line_count)
 {
-    for (size_t inset_idx = 0; inset_idx < skin_inset_count; inset_idx++)
-    {
-        skin_part.insets.push_back(Polygons());
-        if (inset_idx == 0)
-        {
-            //The 10 micron reduced inset is to prevent rounding errors from creating gaps that get filled by the fill small gaps routine.
-            skin_part.insets[0] = skin_part.outline.offset(-skin_line_width / 2 + 10);
-        }
-        else
-        {
-            skin_part.insets[inset_idx] = skin_part.insets[inset_idx - 1].offset(-skin_line_width);
-        }
+	// [0] roof
+	if (skin_roof_layer_count > 0)
+	{
+		const size_t expand_into_skin_area_line_count = std::max(std::min(size_t(2), wall_line_count), roofing_inset_count) + 1;
+		const size_t expand_into_skin_area_distance = expand_into_skin_area_line_count * skin_line_width;
 
-        // optimize polygons: remove unnecessary verts
-        skin_part.insets[inset_idx].simplify();
-        if (skin_part.insets[inset_idx].size() < 1)
-        {
-            skin_part.insets.pop_back();
-            return; // don't generate inner_infill areas if the innermost inset was too small
-        }
-    }
+		Polygons no_air_above = getWalls(layer_part, layer_nr + skin_roof_layer_count, wall_line_count);
+
+		if (!no_air_above.empty())
+		{
+			Polygons roof_outline = skin_part.outline.difference(no_air_above);
+
+			if (!no_small_gaps_heuristic)
+			{
+				for (int layer_nr_above = layer_nr + 1; layer_nr_above < layer_nr + skin_roof_layer_count; layer_nr_above++)
+				{
+					Polygons outlines_above = getWalls(layer_part, layer_nr_above, wall_line_count);
+					no_air_above = no_air_above.intersection(outlines_above);
+				}
+			}
+
+			if (layer_nr > 0)
+			{
+				// set air_below to the skin area for the current layer that has air below it
+				Polygons air_below = getWalls(layer_part, layer_nr, wall_line_count).difference(getWalls(layer_part, layer_nr - 1, wall_line_count));
+
+				if (!air_below.empty())
+				{
+					// add the polygons that have air below to the no air above polygons
+					no_air_above = no_air_above.unionPolygons(air_below);
+				}
+			}
+
+			//The 10 micron reduced inset is to prevent rounding errors from creating gaps that get filled by the fill small gaps routine.
+			Polygons minimal_space = roof_outline.offset(-roofing_line_width / 2 + 10);
+			if (!minimal_space.empty())
+			{
+				// expand into skin area
+				skin_part.roof_outline = roof_outline
+					.offset(expand_into_skin_area_distance)
+					.intersection(skin_part.outline);
+			}
+		}
+		else
+		{
+			if (layer_nr > 1)
+			{
+				skin_part.roof_outline = skin_part.outline;
+			}
+		}
+	}
+	// [1] floor
+	if (skin_floor_layer_count > 0)
+	{
+		const size_t expand_into_skin_area_line_count = std::max(std::min(size_t(2), wall_line_count), flooring_inset_count) + 1;
+		const size_t expand_into_skin_area_distance = expand_into_skin_area_line_count * skin_line_width;
+
+		Polygons no_air_below = getWalls(layer_part, layer_nr - skin_floor_layer_count, wall_line_count);
+		if (!no_air_below.empty())
+		{
+			Polygons floor_outline = skin_part.outline.difference(no_air_below);
+
+			if (!no_small_gaps_heuristic && (layer_nr - skin_floor_layer_count) >= 0)
+			{
+				for (int layer_nr_below = layer_nr - 1; layer_nr_below > layer_nr - skin_floor_layer_count; layer_nr_below--)
+				{
+					Polygons outlines_below = getWalls(layer_part, layer_nr_below, wall_line_count);
+					no_air_below = no_air_below.intersection(outlines_below);
+				}
+			}
+
+			Polygons air_above = getWalls(layer_part, layer_nr, wall_line_count).difference(getWalls(layer_part, layer_nr + 1, wall_line_count));
+			if (!air_above.empty())
+			{
+				no_air_below = no_air_below.unionPolygons(air_above);
+			}
+
+			//The 10 micron reduced inset is to prevent rounding errors from creating gaps that get filled by the fill small gaps routine.
+			Polygons minimal_space = floor_outline.offset(-roofing_line_width / 2 + 10);
+			if (!minimal_space.empty())
+			{
+				// expand into skin area
+				skin_part.floor_outline = floor_outline
+					.offset(expand_into_skin_area_distance)
+					.intersection(skin_part.outline);
+			}
+		}
+		else
+		{
+			if (layer_nr == 0)
+			{
+				skin_part.floor_outline = skin_part.outline;
+			}
+			else
+			{
+				skin_part.floor_outline = skin_part.outline.difference(skin_part.roof_outline);
+			}
+		}
+	}
+	// [2] skin
+	skin_part.skin_outline = skin_part.outline.difference(skin_part.roof_outline.unionPolygons(skin_part.floor_outline));
 }
 
-/*
- * This function is executed in a parallel region based on layer_nr.
- * When modifying make sure any changes does not introduce data races.
- *
- * this function may only read/write the skin and infill from the *current* layer.
- */
-void SkinInfillAreaComputation::generateInnerSkinInfill(SkinPart& skin_part)
+Polygons SkinInfillAreaComputation::generateInsetsInnerInfill(std::vector<Polygons>& insets, Polygons& outline, const coord_t line_width)
 {
-    if (skin_part.insets.empty())
-    {
-        skin_part.inner_infill = skin_part.outline;
-        return;
-    }
-    const Polygons& innermost_inset = skin_part.insets.back();
-    skin_part.inner_infill = innermost_inset.offset(-skin_line_width / 2);
+	if (insets.empty())
+	{
+		return outline;
+	}
+	const Polygons& innermost_inset = insets.back();
+	return innermost_inset.offset(-line_width / 2);
+}
+
+std::vector<Polygons> SkinInfillAreaComputation::generateOutlineInsets(const Polygons& outline, const coord_t line_width, const size_t inset_count)
+{
+	std::vector<Polygons> result;
+	if (outline.empty())
+	{
+		return result;
+	}
+
+	for (size_t inset_idx = 0; inset_idx < inset_count; inset_idx++)
+	{
+		result.push_back(Polygons());
+		if (inset_idx == 0)
+		{
+			//The 10 micron reduced inset is to prevent rounding errors from creating gaps that get filled by the fill small gaps routine.
+			result[0] = outline.offset(-line_width / 2 + 10);
+		}
+		else
+		{
+			result[inset_idx] = result[inset_idx - 1].offset(-line_width);
+		}
+
+		// optimize polygons: remove unnecessary verts
+		result[inset_idx].simplify();
+		if (result[inset_idx].size() < 1)
+		{
+			result.pop_back();
+			return result;
+		}
+	}
+	return result;
 }
 
 /*
@@ -424,8 +574,8 @@ void SkinInfillAreaComputation::generateInfill(SliceLayerPart& part, const Polyg
     {
         return; // the last wall is not present, the part should only get inter perimeter gaps, but no infill.
     }
-    const size_t wall_line_count = mesh.settings.get<size_t>("wall_line_count");
-    const coord_t infill_line_distance = mesh.settings.get<coord_t>("infill_line_distance");
+
+	const coord_t infill_line_distance = mesh.settings.get<coord_t>("infill_line_distance");
 
     coord_t offset_from_inner_wall = -infill_skin_overlap;
     if (wall_line_count > 0)
@@ -443,10 +593,24 @@ void SkinInfillAreaComputation::generateInfill(SliceLayerPart& part, const Polyg
             if (layer_nr == 0)
             { // compensate for shift caused by walls being expanded by the initial line width multiplier
                 const coord_t normal_wall_line_width_0 = mesh.settings.get<coord_t>("wall_line_width_0");
+				const coord_t normal_wall_line_width_1 = mesh.settings.get<coord_t>("wall_line_width_1");
                 const coord_t normal_wall_line_width_x = mesh.settings.get<coord_t>("wall_line_width_x");
-                const coord_t normal_walls_width = normal_wall_line_width_0 + (wall_line_count - 1) * normal_wall_line_width_x;
-                const coord_t walls_width = normal_walls_width * mesh.settings.get<Ratio>("initial_layer_line_width_factor");
-                extra_perimeter_offset += walls_width - normal_walls_width;
+
+				if (optimize_wall_printing_order)
+				{
+					const coord_t normal_walls_width = normal_wall_line_width_0 
+						+ (wall_line_count - 1) * normal_wall_line_width_x;
+					const coord_t walls_width = normal_walls_width * mesh.settings.get<Ratio>("initial_layer_line_width_factor");
+					extra_perimeter_offset += walls_width - normal_walls_width;
+				}
+				else
+				{
+					const coord_t normal_walls_width = normal_wall_line_width_0
+						+ (wall_line_count > 1 ? 1 : 0) * normal_wall_line_width_1
+						+ (wall_line_count - 2) * normal_wall_line_width_x;
+					const coord_t walls_width = normal_walls_width * mesh.settings.get<Ratio>("initial_layer_line_width_factor");
+					extra_perimeter_offset += walls_width - normal_walls_width;
+				}
                 while (extra_perimeter_offset > 0)
                 {
                     extra_perimeter_offset -= infill_line_distance;
@@ -461,53 +625,6 @@ void SkinInfillAreaComputation::generateInfill(SliceLayerPart& part, const Polyg
     infill.removeSmallAreas(MIN_AREA_SIZE);
 
     part.infill_area = infill.offset(infill_skin_overlap);
-}
-
-/*
- * This function is executed in a parallel region based on layer_nr.
- * When modifying make sure any changes does not introduce data races.
- *
- * this function may only read/write the skin and infill from the *current* layer.
- */
-void SkinInfillAreaComputation::generateRoofing(SliceLayerPart& part)
-{
-    const size_t roofing_layer_count = mesh.settings.get<size_t>("roofing_layer_count");
-    const size_t wall_idx = std::min(size_t(2), mesh.settings.get<size_t>("wall_line_count"));
-
-    for (SkinPart& skin_part : part.skin_parts)
-    {
-        Polygons roofing;
-        if (roofing_layer_count > 0)
-        {
-            Polygons no_air_above = getWalls(part, layer_nr + roofing_layer_count, wall_idx);
-            if (!no_small_gaps_heuristic)
-            {
-                for (int layer_nr_above = layer_nr + 1; layer_nr_above < layer_nr + roofing_layer_count; layer_nr_above++)
-                {
-                    Polygons outlines_above = getWalls(part, layer_nr_above, wall_idx);
-                    no_air_above = no_air_above.intersection(outlines_above);
-                }
-            }
-            if (layer_nr > 0)
-            {
-                // if the skin has air below it then cutting it into regions could cause a region
-                // to be wholely or partly above air and it may not be printable so restrict
-                // the regions that have air above (the visible regions) to not include any area that
-                // has air below (fixes https://github.com/Ultimaker/Cura/issues/2656)
-
-                // set air_below to the skin area for the current layer that has air below it
-                Polygons air_below = getWalls(part, layer_nr, wall_idx).difference(getWalls(part, layer_nr - 1, wall_idx));
-
-                if (!air_below.empty())
-                {
-                    // add the polygons that have air below to the no air above polygons
-                    no_air_above = no_air_above.unionPolygons(air_below);
-                }
-            }
-            skin_part.roofing_fill = skin_part.inner_infill.difference(no_air_above);
-            skin_part.inner_infill = skin_part.inner_infill.intersection(no_air_above);
-        }
-    }
 }
 
 void SkinInfillAreaComputation::generateInfillSupport(SliceMeshStorage& mesh)

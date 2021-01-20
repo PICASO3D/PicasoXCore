@@ -11,8 +11,17 @@
 namespace cura
 {
 
-int bridgeAngle(const Settings& settings, const Polygons& skin_outline, const SliceDataStorage& storage, const unsigned layer_nr, const SupportLayer* support_layer, Polygons& supported_regions)
+bool findBridgeAngle(
+	const Settings& settings, 
+	const Polygons& skin_outline, 
+	const SliceDataStorage& storage, 
+	const unsigned layer_nr, 
+	const SupportLayer* support_layer, 
+	Polygons& supported_regions,
+	double& result_angle)
 {
+	result_angle = double(0);
+
     AABB boundary_box(skin_outline);
 
     //To detect if we have a bridge, first calculate the intersection of the current layer with the previous layer.
@@ -136,20 +145,21 @@ int bridgeAngle(const Settings& settings, const Polygons& skin_outline, const Sl
                         p0 = p1;
                     }
                 }
-                return line_angle;
+				result_angle = line_angle;
+                return true;
             }
         }
         else
         {
             // as the proportion of the skin region that is supported is >= supportThreshold, it's not
             // considered to be a bridge and the original bridge detection code below is skipped
-            return -1;
+            return false;
         }
     }
 
     if (islands.size() > 5 || islands.size() < 1)
     {
-        return -1;
+        return false;
     }
 
     //Next find the 2 largest islands that we rest on.
@@ -181,12 +191,13 @@ int bridgeAngle(const Settings& settings, const Polygons& skin_outline, const Sl
     }
     
     if (idx1 < 0 || idx2 < 0)
-        return -1;
+        return false;
     
     Point center1 = islands[idx1].centerOfMass();
     Point center2 = islands[idx2].centerOfMass();
 
-    return angle(center2 - center1);
+	result_angle = angle(center2 - center1);
+	return true;
 }
 
 }//namespace cura

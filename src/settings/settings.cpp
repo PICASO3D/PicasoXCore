@@ -450,6 +450,19 @@ template<> EZSeamType Settings::get<EZSeamType>(const std::string& key) const
     }
 }
 
+template<> EZSeamUserSpecifiedMode Settings::get<EZSeamUserSpecifiedMode>(const std::string& key) const
+{
+	const std::string& value = get<std::string>(key);
+	if (value == "bb_angled")
+	{
+		return EZSeamUserSpecifiedMode::BB_ANGLED;
+	}
+	else //Default.
+	{
+		return EZSeamUserSpecifiedMode::NONE;
+	}
+}
+
 template<> EZSeamCornerPrefType Settings::get<EZSeamCornerPrefType>(const std::string& key) const
 {
     const std::string& value = get<std::string>(key);

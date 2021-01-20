@@ -62,6 +62,12 @@ enum class EZSeamType
     SHARPEST_CORNER
 };
 
+enum class EZSeamUserSpecifiedMode
+{
+	NONE,
+	BB_ANGLED
+};
+
 enum class EZSeamCornerPrefType
 {
     Z_SEAM_CORNER_PREF_NONE,

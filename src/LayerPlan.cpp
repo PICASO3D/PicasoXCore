@@ -959,7 +959,7 @@ void LayerPlan::addWall(ConstPolygonRef wall, int start_idx, const SliceMeshStor
     }
 }
 
-void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamConfig& seamConfig, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
+void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamConfig& seamConfig, const SliceMeshStorage& mesh, const PathConfigStorage::MeshPathConfigs& mesh_config, WallOverlapComputation* wall_overlap_computation, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
 {
 	// make sure wall start point is not above air!
 	int tmp_start_idx = start_idx;
@@ -973,6 +973,11 @@ void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamCo
 	const coord_t min_bridge_line_len = mesh.settings.get<coord_t>("bridge_wall_min_length");
 	const Ratio wall_min_flow = mesh.settings.get<Ratio>("wall_min_flow");
 	const bool wall_min_flow_retract = mesh.settings.get<bool>("wall_min_flow_retract");
+
+	const GCodePathConfig& non_bridge_config = mesh_config.inset0_config;
+	const GCodePathConfig& bridge_config = mesh_config.bridge_inset0_config;
+	const GCodePathConfig& inset0_seam_cross_start_config = mesh_config.inset0_config_seam_cross_start;
+	const GCodePathConfig& inset0_seam_cross_finish_config = mesh_config.inset0_config_seam_cross_finish;
 
 	// helper function to calculate the distance from the start of the current wall line to the first bridge segment
 	auto computeDistanceToBridgeStart = [&](unsigned current_index)
@@ -1065,16 +1070,25 @@ void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamCo
 		{
 			if (seamConfig.cross_cfg != EZSeamCross::NONE)
 			{
-				const double speed = speed_factor * seamConfig.start.speed_multiplier;
-				const float flow = flow_ratio * seamConfig.start.flow_multiplier;
+				//const double speed = speed_factor * seamConfig.start.speed_multiplier;
+				//const float flow = flow_ratio * seamConfig.start.flow_multiplier;
 				const Point& ps0 = seamConfig.start.point;
 				const Point& ps1 = seamConfig.point_center;
 
-				addTravel(ps0, wall_min_flow_retract);
-				addWallLine(ps0, ps1, mesh, non_bridge_config, bridge_config, flow, non_bridge_line_volume, speed, distance_to_bridge_start);
+				const float flow_seam_start = (wall_overlap_computation) ? flow_ratio * wall_overlap_computation->getFlow(ps0, ps1) : flow_ratio;
 
-				first_line = false;
-				on_seam_point = true;
+				if (flow_seam_start >= wall_min_flow)
+				{
+					addTravel(ps0, wall_min_flow_retract);
+					addWallLine(ps0, ps1, mesh, inset0_seam_cross_start_config, bridge_config, flow_seam_start, non_bridge_line_volume, speed_factor, distance_to_bridge_start);
+
+					first_line = false;
+					on_seam_point = true;
+				}
+				else
+				{
+					travel_required = true;
+				}
 			}
 		}
 		if (seamConfig.corner_pref == EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_SMOOTH)
@@ -1161,12 +1175,18 @@ void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamCo
 				&& seamConfig.point_crossing_found
 				&& seamConfig.cross_cfg != EZSeamCross::NONE)
 			{
-				const double speed = speed_factor * seamConfig.start.speed_multiplier;
-				const float flow = flow_ratio * seamConfig.finish.flow_multiplier;
+				//const double speed = speed_factor * seamConfig.start.speed_multiplier;
+				//const float flow = flow_ratio * seamConfig.finish.flow_multiplier;
 				const Point& ps0 = seamConfig.point_center; // p1
 				const Point& ps1 = seamConfig.finish.point;
-				addWallLine(ps0, ps1, mesh, non_bridge_config, bridge_config, flow, non_bridge_line_volume, speed, distance_to_bridge_start);
-				crossing_mode = true;
+
+				const float flow_seam_finish = (wall_overlap_computation) ? flow_ratio * wall_overlap_computation->getFlow(ps0, ps1) : flow_ratio;
+
+				if (flow_seam_finish >= wall_min_flow)
+				{
+					addWallLine(ps0, ps1, mesh, inset0_seam_cross_finish_config, bridge_config, flow_seam_finish, non_bridge_line_volume, speed_factor, distance_to_bridge_start);
+					crossing_mode = true;
+				}
 			}
 
 			if (wall_0_wipe_dist > 0 && crossing_mode == false)
@@ -1202,7 +1222,7 @@ void LayerPlan::addWall_p0(ConstPolygonRef wall, int start_idx, const WallSeamCo
 }
 
 // For Perimeter 0 try add movements between start points and 
-void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, const ZSeamConfig& z_seam_config, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
+void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh, const PathConfigStorage::MeshPathConfigs& mesh_config, WallOverlapComputation* wall_overlap_computation, const ZSeamConfig& z_seam_config, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
 {
 	PathOrderOptimizer orderOptimizer(getLastPlannedPositionOrStartingPosition(), z_seam_config);
 	for (unsigned int poly_idx = 0; poly_idx < walls.size(); poly_idx++)
@@ -1240,7 +1260,7 @@ void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh,
 				if (seamCrossing.FindCrossing_Mode_Normal(walls, p0, machine_nozzle_size, machine_nozzle_size, false))
 				{
 					addTravel(p0, wall_min_flow_retract);
-					addWallLine(p0, p1, mesh, non_bridge_config, bridge_config, flow_ratio / 10, non_bridge_line_volume, 1.0, 0);
+					addWallLine(p0, p1, mesh, mesh_config.inset0_config, mesh_config.bridge_inset0_config, flow_ratio / 10, non_bridge_line_volume, 1.0, 0);
 				}
 			}
 		}
@@ -1255,7 +1275,7 @@ void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh,
 		}
 
 		// calculate seam config
-		WallSeamConfig seamConfig(start_idx, p1, z_seam_cross, z_seam_config.corner_pref);
+		WallSeamConfig inset0_seam_coinfig(start_idx, p1, z_seam_cross, z_seam_config.corner_pref);
 		switch (z_seam_cross)
 		{
 		case EZSeamCross::NORMAL:
@@ -1266,7 +1286,7 @@ void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh,
 				WallSeamCornerPoint point_start(p0, z_seam_cross_start_flow, z_seam_cross_start_speed);
 				WallSeamCornerPoint point_finish(p0, z_seam_cross_finish_flow, z_seam_cross_finish_speed);
 
-				seamConfig = WallSeamConfig(start_idx, p1, point_start, point_finish, z_seam_cross, z_seam_config.corner_pref);
+				inset0_seam_coinfig = WallSeamConfig(start_idx, p1, point_start, point_finish, z_seam_cross, z_seam_config.corner_pref);
 			}
 		}break;
 
@@ -1281,7 +1301,7 @@ void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh,
 				WallSeamCornerPoint point_start(p0_start, z_seam_cross_start_flow, z_seam_cross_start_speed);
 				WallSeamCornerPoint point_finish(p0_end, z_seam_cross_finish_flow, z_seam_cross_finish_speed);
 
-				seamConfig = WallSeamConfig(start_idx, p1, point_start, point_finish, z_seam_cross, z_seam_config.corner_pref);
+				inset0_seam_coinfig = WallSeamConfig(start_idx, p1, point_start, point_finish, z_seam_cross, z_seam_config.corner_pref);
 			}
 		}break;
 
@@ -1289,7 +1309,7 @@ void LayerPlan::addWalls_p0(const Polygons& walls, const SliceMeshStorage& mesh,
 			break;
 		}
 
-		addWall_p0(walls[poly_idx], orderOptimizer.polyStart[poly_idx], seamConfig, mesh, non_bridge_config, bridge_config, wall_overlap_computation, wall_0_wipe_dist, flow_ratio, always_retract);
+		addWall_p0(walls[poly_idx], orderOptimizer.polyStart[poly_idx], inset0_seam_coinfig, mesh, mesh_config, wall_overlap_computation, wall_0_wipe_dist, flow_ratio, always_retract);
 	}
 }
 
@@ -1916,6 +1936,7 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
 
                     case PathConfigFeature::Skin: feature_string << " ;Skin"; break;
                     case PathConfigFeature::Roofing: feature_string << " ;Roofing"; break;
+					case PathConfigFeature::Flooring: feature_string << " ;Flooring"; break;
                     case PathConfigFeature::Infill: feature_string << " ;Infill"; break;
                     case PathConfigFeature::Ironing: feature_string << " ;Ironing"; break;
                     case PathConfigFeature::PerimeterGap: feature_string << " ;PerimeterGap"; break;

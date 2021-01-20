@@ -194,12 +194,21 @@ int Mesh::getFaceIdxWithPoints(int idx0, int idx1, int notFaceIdx, int notFaceVe
 
     for (int candidateFace : candidateFaces)
     {
-        int candidateVertex;
-        {// find third vertex belonging to the face (besides idx0 and idx1)
-            for (candidateVertex = 0; candidateVertex<3; candidateVertex++)
-                if (faces[candidateFace].vertex_index[candidateVertex] != idx0 && faces[candidateFace].vertex_index[candidateVertex] != idx1)
-                    break;
-        }
+		int candidateVertex = -1;
+		{// find third vertex belonging to the face (besides idx0 and idx1)
+			int idx = 2;
+			while (idx != -1) {
+				if (faces[candidateFace].vertex_index[idx] != idx0 && faces[candidateFace].vertex_index[idx] != idx1) {
+					candidateVertex = idx;
+					break;
+				}
+				idx--;
+			}
+		}
+
+		if (candidateVertex == -1) {
+			return -1;
+		}
 
         FPoint3 v1 = vertices[faces[candidateFace].vertex_index[candidateVertex]].p - vertices[idx0].p;
         FPoint3 n1 = v0.cross(v1);
@@ -209,7 +218,7 @@ int Mesh::getFaceIdxWithPoints(int idx0, int idx1, int notFaceIdx, int notFaceVe
         double angle = std::atan2(det, dot);
         if (angle < 0) angle += 2*M_PI; // 0 <= angle < 2* M_PI
 
-        if (angle == 0)
+		if (is_equal(angle, static_cast<double>(0)))
         {
             cura::logDebug("Overlapping faces: face %i and face %i.\n", notFaceIdx, candidateFace);
             if (!has_overlapping_faces)

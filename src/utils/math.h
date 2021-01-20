@@ -11,6 +11,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+//Allowed error in comparing floating point values.
+#ifndef EPSILON
+#define EPSILON 0.00001
+#endif
+
 namespace cura
 {
 
@@ -26,7 +31,9 @@ inline unsigned int round_up_divide(unsigned int dividend, unsigned int divisor)
 {
     return (dividend + divisor - 1) / divisor;
 }
-
+inline bool is_equal(double _a, double _b) {
+	return (fabs(_a - _b) < EPSILON);
+}
 }//namespace cura
 #endif // UTILS_MATH_H
 

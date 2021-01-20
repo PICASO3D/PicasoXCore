@@ -32,6 +32,7 @@ void TimeEstimateCalculator::setFirmwareDefaults(const Settings& settings)
     max_e_jerk = settings.get<Velocity>("machine_max_jerk_e");
     minimumfeedrate = settings.get<Velocity>("machine_minimum_feedrate");
     acceleration = settings.get<Acceleration>("machine_acceleration");
+	extruder_count = settings.get<size_t>("machine_extruder_count");
 }
 
 
@@ -304,8 +305,8 @@ std::vector<Duration> TimeEstimateCalculator::calculate()
     
     std::vector<Duration> totals(static_cast<unsigned char>(PrintFeatureType::NumPrintFeatureTypes), 0.0);
     totals[static_cast<unsigned char>(PrintFeatureType::NoneType)] = extra_time; // Extra time (pause for minimum layer time, etc) is marked as NoneType
-    totals[static_cast<unsigned char>(PrintFeatureType::Retract)] = retract_start; // Count of Retracts
-    totals[static_cast<unsigned char>(PrintFeatureType::ZHopp)] = zhopp_start; // Count of ZHopp
+    //totals[static_cast<unsigned char>(PrintFeatureType::Retract)] = retract_start; // Count of Retracts
+    //totals[static_cast<unsigned char>(PrintFeatureType::ZHopp)] = zhopp_start; // Count of ZHopp
     for(unsigned int n = 0; n < blocks.size(); n++)
     {
         const Block& block = blocks[n];
@@ -316,6 +317,32 @@ std::vector<Duration> TimeEstimateCalculator::calculate()
         totals[static_cast<unsigned char>(block.feature)] += acceleration_time_from_distance(block.final_feedrate, (block.distance - block.decelerate_after), block.acceleration);
     }
     return totals;
+}
+
+TimeEstimateResult TimeEstimateCalculator::getTimeEstimateResult()
+{
+	reverse_pass();
+	forward_pass();
+	recalculate_trapezoids();
+
+	TimeEstimateResult result(extruder_count, extra_time, retract_start, zhopp_start);
+
+	for (unsigned int n = 0; n < blocks.size(); n++)
+	{
+		const Block& block = blocks[n];
+		const double plateau_distance = block.decelerate_after - block.accelerate_until;
+
+		std::vector<Duration>& totals = result.durations[block.extruder];
+
+		cura::Duration value;
+		value += acceleration_time_from_distance(block.initial_feedrate, block.accelerate_until, block.acceleration);
+		value += plateau_distance / block.nominal_feedrate;
+		value += acceleration_time_from_distance(block.final_feedrate, (block.distance - block.decelerate_after), block.acceleration);
+
+		totals[static_cast<unsigned char>(block.featureType)] += value;
+	}
+
+	return result;
 }
 
 // The kernel called by accelerationPlanner::calculate() when scanning the plan from last to first entry.

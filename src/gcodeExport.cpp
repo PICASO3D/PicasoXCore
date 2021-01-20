@@ -64,7 +64,7 @@ GCodeExport::GCodeExport()
     current_travel_acceleration = -1;
     current_jerk = -1;
 
-    current_speed_profile = PicasoSpeedProfile::Counters;
+    current_speed_profile = PicasoSpeedProfile::Undefined;
 
     is_z_hopped = 0;
     setFlavor(EGCodeFlavor::MARLIN);
@@ -168,6 +168,8 @@ void GCodeExport::preSetup(const size_t start_extruder)
     {
         new_line = "\n";
     }
+
+	total_print_times_pathConfig.ReInit(mesh_group->settings.get<size_t>("machine_extruder_count"));
 
     estimateCalculator.setFirmwareDefaults(mesh_group->settings);
 }
@@ -297,6 +299,8 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 
 	case EGCodeFlavor::PICASO:
 	{
+		const Scene& scene = Application::getInstance().current_slice->scene;
+
 		prefix << ";FLAVOR:" << flavorToString(flavor) << new_line;
 		if (print_time)
 		{
@@ -334,7 +338,7 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 			}
 			if (getExtruderIsUsed(extr_nr))
 			{
-				const Settings& extruder_settings = Application::getInstance().current_slice->scene.extruders[extr_nr].settings;
+				const Settings& extruder_settings = scene.extruders[extr_nr].settings;
 				prefix << ";EXTRUDER_" << extr_nr << "_DIAMETER=" << extruder_settings.get<double>("machine_nozzle_size") << new_line;
 			}
 		}
@@ -343,47 +347,38 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 			//logAlways(comment_value.c_str());
 			prefix << ";" << comment_value << new_line;
 		}
-		prefix << ";TIME_FEATURES" << new_line;
-		std::vector<Duration> printTimePerFeature = getTotalPrintTimePerFeature();
-		std::vector<double> picasoSpeedProfileTime = std::vector<double>(static_cast<unsigned char>(PicasoSpeedProfile::NumPicasoSpeedProfiles), 0.0);
-		double print_time_total = 0.0;
-		for (size_t i = 0; i < printTimePerFeature.size(); i++)
+
+		// <TIME_FEATURES>
+		const PicasoPrintModeEstimate& total_estimates = getPicasoPrintModeEstimate(scene, total_print_times_pathConfig);
+		std::vector<Duration> total_estimates_all_extruders(static_cast<unsigned char>(PicasoPrintMode::NumPicasoPrintModes), 0.0);
+		// Report Total Durations
+		for (auto it = total_estimates.durations.begin(); it != total_estimates.durations.end(); ++it)
 		{
-			PrintFeatureType feature = (PrintFeatureType)i;
-			double value = printTimePerFeature[i].value;
-
-			PicasoSpeedProfile profile = getPicasoSpeedProfile(feature);
-			bool is_counters = profile == PicasoSpeedProfile::Counters;
-
-			if (!is_counters)
+			for (size_t n = 0; n < it->second.size(); n++)
 			{
-				size_t profile_ind = (size_t)profile;
-				picasoSpeedProfileTime[profile_ind] += value;
-				print_time_total += value;
+				prefix << ";M1112 T" << it->first
+					<< " S" << n
+					<< " P" << PrecisionedDouble{ 0, it->second[n] } << new_line;
+
+				total_estimates_all_extruders[n] += it->second[n];
 			}
-
-			prefix << (is_counters ? ";COUNT_" : ";TIME_") << printFeatureTypeToString(feature) << ":" << value << new_line;
 		}
-		prefix << ";TIME_TOTAL:" << print_time_total << new_line;
-		prefix << ";PATH_PROFILES" << new_line;
-		for (size_t i = 0; i < picasoSpeedProfileTime.size(); i++)
-		{
-			PicasoSpeedProfile profile = (PicasoSpeedProfile)i;
-			double value = picasoSpeedProfileTime[i];
-
-			prefix << ";PATH_" << picasoSpeedProfileToString(profile) << ":" << value << new_line;
-		}
-
-		std::vector<double> picasoPrintModes = getPicasoPrintModes(printTimePerFeature);
+		// Report Layer Additional Counters
+		prefix << ";M1114"
+			<< " Z" << total_estimates.zhopp_count
+			<< " E" << total_estimates.retract_count
+			<< " P" << PrecisionedDouble{ 0, total_estimates.extra_time } << new_line;
+		// Old Format combined extruders
 		for (size_t i = 0; i < (int)PicasoPrintMode::NumPicasoPrintModes; i++)
 		{
-			prefix << ";TASK_TIME_POLYGON_" << i << "=" << (int)(picasoPrintModes[i] / 60) << new_line; // in minutes
+			prefix << ";TASK_TIME_POLYGON_" << i << "=" << (int)((total_estimates_all_extruders[i] + total_estimates.extra_time) / 60) << new_line; // in minutes
 		}
+		// </TIME_FEATURES>
 
 		assert(used_extruders > 0 && extruder_count > 0 && extruder_count <= 2);
 
 		// TID - TaskIdentifier
-		const std::string tid_value = Application::getInstance().current_slice->scene.settings.get<std::string>("machine_tid");
+		const std::string tid_value = scene.settings.get<std::string>("machine_tid");
 		if (tid_value == "") {
 			std::ostringstream hash_string;
 			hash_string << "PicasoXCore_";
@@ -414,39 +409,44 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 			}
 		}
 
-		prefix << ";POLYGON_FIRST_LAYER_HEIGHT=" << Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("layer_height_0") << new_line;
-		prefix << ";POLYGON_LAYER_HEIGHT=" << Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("layer_height") << new_line;
+		prefix << ";POLYGON_FIRST_LAYER_HEIGHT=" << scene.current_mesh_group->settings.get<double>("layer_height_0") << new_line;
+		prefix << ";POLYGON_LAYER_HEIGHT=" << scene.current_mesh_group->settings.get<double>("layer_height") << new_line;
 		//sb.Append($";POLYGON_SOLUBLE=0{new_line}");
-		prefix << ";POLYGON_BASIC_FEEDRATE=" << Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("speed_print") << new_line;
+		//prefix << ";POLYGON_BASIC_FEEDRATE=" << Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("speed_print") << new_line;
 		prefix << ";POLYGON_END_PARAMS" << new_line;
+		prefix << new_line;
 
-		const Scene& current_scene = Application::getInstance().current_slice->scene;
-
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Inset0, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Inset1, "speed_wall_1", "acceleration_wall_1", "jerk_wall_1");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::InsetX, "speed_wall_x", "acceleration_wall_x", "jerk_wall_x");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeInset0, "bridge_wall_speed", "acceleration_wall_0", "jerk_wall_0");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeInset1, "bridge_wall_speed", "acceleration_wall_1", "jerk_wall_1");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeInsetX, "bridge_wall_speed", "acceleration_wall_x", "jerk_wall_x");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeSkin1, "bridge_skin_speed", "acceleration_topbottom", "jerk_topbottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeSkin2, "bridge_skin_speed_2", "acceleration_topbottom", "jerk_topbottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::BridgeSkin3, "bridge_skin_speed_3", "acceleration_topbottom", "jerk_topbottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Skin, "speed_topbottom", "acceleration_topbottom", "jerk_topbottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Roofing, "speed_roofing", "acceleration_roofing", "jerk_roofing");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Infill, "speed_infill", "acceleration_infill", "jerk_infill");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::Ironing, "speed_ironing", "acceleration_ironing", "jerk_ironing");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::PerimeterGap, "speed_topbottom", "acceleration_topbottom", "jerk_topbottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::RaftBase, "raft_base_speed", "raft_base_acceleration", "raft_base_jerk");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::RaftInterface, "raft_interface_speed", "raft_interface_acceleration", "raft_interface_jerk");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::RaftSurface, "raft_surface_speed", "raft_surface_acceleration", "raft_surface_jerk");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::ExtruderTravel, "speed_travel", "acceleration_travel", "jerk_travel");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::ExtruderSkirtBrim, "skirt_brim_speed", "acceleration_skirt_brim", "jerk_skirt_brim");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::ExtruderPrimeTower, "speed_prime_tower", "acceleration_prime_tower", "jerk_prime_tower");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::SupportRoof, "speed_support_roof", "acceleration_support_roof", "jerk_support_roof");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::SupportInfill, "speed_support_infill", "acceleration_support_infill", "jerk_support_infill");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::SupportBottom, "speed_support_bottom", "acceleration_support_bottom", "jerk_support_bottom");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::SupportUnderRoof, "speed_support_under_roof", "acceleration_support_roof", "jerk_support_roof");
-		prefix << getPathConfigFeatureConfig(current_scene, PathConfigFeature::SupportAboveBottom, "speed_support_above_bottom", "acceleration_support_bottom", "jerk_support_bottom");
+		// M1109 config
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset0, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset1, "speed_wall_1", "acceleration_wall_1", "jerk_wall_1");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::InsetX, "speed_wall_x", "acceleration_wall_x", "jerk_wall_x");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeInset0, "bridge_wall_speed", "acceleration_wall_0", "jerk_wall_0");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeInset1, "bridge_wall_speed", "acceleration_wall_1", "jerk_wall_1");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeInsetX, "bridge_wall_speed", "acceleration_wall_x", "jerk_wall_x");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeSkin1, "bridge_skin_speed", "acceleration_topbottom", "jerk_topbottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeSkin2, "bridge_skin_speed_2", "acceleration_topbottom", "jerk_topbottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::BridgeSkin3, "bridge_skin_speed_3", "acceleration_topbottom", "jerk_topbottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Roofing, "speed_roofing", "acceleration_roofing", "jerk_roofing");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Skin, "speed_topbottom", "acceleration_topbottom", "jerk_topbottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Flooring, "speed_flooring", "acceleration_flooring", "jerk_flooring");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Infill, "speed_infill", "acceleration_infill", "jerk_infill");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Ironing, "speed_ironing", "acceleration_ironing", "jerk_ironing");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::PerimeterGap, "speed_topbottom", "acceleration_topbottom", "jerk_topbottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::RaftBase, "raft_base_speed", "raft_base_acceleration", "raft_base_jerk");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::RaftInterface, "raft_interface_speed", "raft_interface_acceleration", "raft_interface_jerk");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::RaftSurface, "raft_surface_speed", "raft_surface_acceleration", "raft_surface_jerk");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::ExtruderTravel, "speed_travel", "acceleration_travel", "jerk_travel");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::ExtruderSkirtBrim, "skirt_brim_speed", "acceleration_skirt_brim", "jerk_skirt_brim");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::ExtruderPrimeTower, "speed_prime_tower", "acceleration_prime_tower", "jerk_prime_tower");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::SupportRoof, "speed_support_roof", "acceleration_support_roof", "jerk_support_roof");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::SupportInfill, "speed_support_infill", "acceleration_support_infill", "jerk_support_infill");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::SupportBottom, "speed_support_bottom", "acceleration_support_bottom", "jerk_support_bottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::SupportUnderRoof, "speed_support_under_roof", "acceleration_support_roof", "jerk_support_roof");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::SupportAboveBottom, "speed_support_above_bottom", "acceleration_support_bottom", "jerk_support_bottom");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::MoveRetraction, "speed_travel", "acceleration_travel", "jerk_travel");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Flooring, "speed_flooring", "acceleration_flooring", "jerk_flooring");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset0SeamCrossStart, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
+		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset0SeamCrossFinish, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
 
 	}
 	break;
@@ -512,10 +512,11 @@ std::string GCodeExport::getPathConfigFeatureConfig(
 {
 	std::ostringstream prefix;
 	prefix << "M1109 S" << static_cast<int>(feature);
-	prefix << " P" << static_cast<int>(getPicasoSpeedProfile(feature));
+	prefix << " P" << static_cast<int>(PrintFeatureConverter::toPicasoSpeedProfile(feature));
 	prefix << " V" << PrecisionedDouble{ 1, scene.settings.get<Velocity>(key_speed) };
 	prefix << " A" << PrecisionedDouble{ 1, scene.settings.get<Acceleration>(key_acceleration) };
-	prefix << " J" << PrecisionedDouble{ 1, scene.settings.get<Velocity>(key_jerk) } << new_line;
+	prefix << " J" << PrecisionedDouble{ 1, scene.settings.get<Velocity>(key_jerk) };
+	prefix << " I" << (PrintFeatureConverter::allowSpeedScale(feature) ? 1 : 0) << new_line;
 	return prefix.str();
 }
 
@@ -780,53 +781,71 @@ std::vector<Duration> GCodeExport::getTotalPrintTimePerFeature()
     return total_print_times;
 }
 
-std::vector<double> GCodeExport::getPicasoPrintModes(std::vector<Duration> print_times)
+
+PicasoPrintModeEstimate GCodeExport::getPicasoPrintModeEstimate(const Scene& scene, const TimeEstimateResult& estimateResult)
 {
-    std::vector<double> result;
-    result.resize((int)PicasoPrintMode::NumPicasoPrintModes, 0.0);
+	PicasoPrintModeEstimate result(estimateResult.extruder_count, estimateResult.extra_time, estimateResult.retract_count, estimateResult.zhopp_count);
 
-    double base_speed = Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("speed_print"); // ~40 mm/s
+	// Prepare SpeedScales
+	std::map<size_t, PicasoSpeedScale> speed_scales;
+	for (size_t i = 0; i < static_cast<size_t>(PathConfigFeature::NumPathConfigFeatures); i++)
+	{
+		const PathConfigFeature feature = static_cast<PathConfigFeature>(i);
+		const Velocity base_speed = getFeatureSpeed(scene, feature);
+		const bool allow_scale = PrintFeatureConverter::allowSpeedScale(feature);
 
-    for (size_t i = 0; i < print_times.size(); i++)
-    {
-        PrintFeatureType feature = (PrintFeatureType)i;
-        PicasoSpeedProfile profile = getPicasoSpeedProfile(feature);
-        double feature_time = print_times[i].value;
+		PicasoSpeedScale speed_scale(base_speed, allow_scale);
+		speed_scales[i] = speed_scale;
+	}
 
-        switch (profile)
-        {
-        case cura::PicasoSpeedProfile::Undefined:
-        {
-            for (size_t j = 0; j < (size_t)PicasoPrintMode::NumPicasoPrintModes; j++)
-            {
-                result[j] += feature_time;
-            }
-        }
-        break;
+	// Calculate PicasoPrintModeEstimate
+	for (auto it = estimateResult.durations.begin(); it != estimateResult.durations.end(); ++it)
+	{
+		auto result_it = result.durations.find(it->first);
+		if (result_it != result.durations.end())
+		{
+			for (size_t n = 0; n < it->second.size(); n++)
+			{
+				const PathConfigFeature feature = static_cast<PathConfigFeature>(n);
+				const PicasoSpeedProfile profile = PrintFeatureConverter::toPicasoSpeedProfile(feature);
 
-        case cura::PicasoSpeedProfile::Perimeter:
-        case cura::PicasoSpeedProfile::Loops:
-        case cura::PicasoSpeedProfile::Support:
-        case cura::PicasoSpeedProfile::InterfaceSupport:
-        case cura::PicasoSpeedProfile::Infill:
-        {
-            size_t profile_ind = (size_t)profile;
+				const PicasoSpeedScale& speed_scale = speed_scales[n];
 
-            for (size_t j = 0; j < (size_t)PicasoPrintMode::NumPicasoPrintModes; j++)
-            {
-                double speed_koef = picasoPrintModeSpeed[j][profile_ind] / base_speed;
-                result[j] += feature_time / speed_koef;
-            }
-        }
-        break;
+				switch (profile)
+				{
+				case PicasoSpeedProfile::Perimeter:
+				case PicasoSpeedProfile::Loops:
+				case PicasoSpeedProfile::Support:
+				case PicasoSpeedProfile::InterfaceSupport:
+				case PicasoSpeedProfile::Infill:
+				case PicasoSpeedProfile::Travel:
+				{
+					Duration value(it->second[n]);
 
-        case cura::PicasoSpeedProfile::Counters:
-        default:
-            break;
-        }
-    }
+					for (size_t m = 0; m < static_cast<size_t>(PicasoPrintMode::NumPicasoPrintModes); m++)
+					{
+						if (speed_scale.allow_scale)
+						{
+							Duration speed_koef = picasoPrintModeSpeed[m][static_cast<size_t>(profile)] / speed_scale.base_speed;
+							result_it->second[m] += value / speed_koef;
+						}
+						else
+						{
+							result_it->second[m] += value;
+						}
+					}
+				}
+				break;
 
-    return result;
+				case PicasoSpeedProfile::Undefined:
+				default:
+					break;
+				}
+			}
+		}
+	}
+
+	return result;
 }
 
 double GCodeExport::getSumTotalPrintTimes()
@@ -834,10 +853,6 @@ double GCodeExport::getSumTotalPrintTimes()
     double sum = 0.0;
     for (size_t i = 0; i < total_print_times.size(); i++)
     {
-        if (i == (size_t)PrintFeatureType::Retract || i == (size_t)PrintFeatureType::ZHopp)
-        {// Skip counters
-            continue;
-        }
         sum += total_print_times[i];
     }
     return sum;
@@ -849,6 +864,9 @@ void GCodeExport::resetTotalPrintTimeAndFilament()
     {
         total_print_times[i] = 0.0;
     }
+
+	total_print_times_pathConfig.Reset();
+
     for(unsigned int e=0; e<MAX_EXTRUDERS; e++)
     {
         extruder_attr[e].totalFilament = 0.0;
@@ -861,89 +879,63 @@ void GCodeExport::resetTotalPrintTimeAndFilament()
 
 void GCodeExport::updateTotalPrintTime()
 {
-    std::vector<Duration> estimates = estimateCalculator.calculate();
-    for(size_t i = 0; i < estimates.size(); i++)
-    {
-        total_print_times[i] += estimates[i];
-    }
-    estimateCalculator.reset();
+	TimeEstimateResult timeEstimates = estimateCalculator.getTimeEstimateResult();
 
-    if (getFlavor() == EGCodeFlavor::PICASO)
-    {
-        *output_stream << ";TIME_FEATURES" << new_line;
-        std::vector<Duration> printTimePerFeature = getTotalPrintTimePerFeature();
+	total_print_times_pathConfig.Add(timeEstimates);
+	std::vector<Duration> estimates = timeEstimates.getPrintFeatureTypes();
 
-        std::vector<double> picasoLayerSpeedProfileTime = std::vector<double>(static_cast<unsigned char>(PicasoSpeedProfile::NumPicasoSpeedProfiles), 0.0);
-        double print_time_layer = 0.0;
+	for (size_t i = 0; i < estimates.size(); i++)
+	{
+		total_print_times[i] += estimates[i];
+	}
+	estimateCalculator.reset();
 
-        for (size_t i = 0; i < estimates.size(); i++)
-        {
-            PrintFeatureType feature = (PrintFeatureType)i;
-            double value = estimates[i];
+	if (getFlavor() == EGCodeFlavor::PICASO)
+	{
+		const Scene& scene = Application::getInstance().current_slice->scene;
 
-            PicasoSpeedProfile profile = getPicasoSpeedProfile(feature);
-            bool is_counters = profile == PicasoSpeedProfile::Counters;
+		PicasoPrintModeEstimate layerEstimates = getPicasoPrintModeEstimate(scene, timeEstimates);
+		// <Layer>
+		// Report Layer Durations
+		for (auto it = layerEstimates.durations.begin(); it != layerEstimates.durations.end(); ++it)
+		{
+			for (size_t n = 0; n < it->second.size(); n++)
+			{
+				*output_stream << "M1111 T" << it->first
+					<< " L" << this->layer_nr
+					<< " S" << n
+					<< " P" << PrecisionedDouble{ 0, it->second[n] } << new_line;
+			}
+		}
+		// Report Layer Additional Counters
+		*output_stream << "M1113 L" << this->layer_nr
+			<< " Z" << layerEstimates.zhopp_count
+			<< " E" << layerEstimates.retract_count
+			<< " P" << PrecisionedDouble{ 0, layerEstimates.extra_time } << new_line;
+		// </Layer>
 
-            if (!is_counters)
-            {
-                size_t profile_ind = (size_t)profile;
-                picasoLayerSpeedProfileTime[profile_ind] += value;
-                print_time_layer += value;
-            }
-            *output_stream << (is_counters ? ";LAYER_COUNT_" : ";LAYER_TIME_") << printFeatureTypeToString(feature) << ":" << value << new_line;
-        }
-        *output_stream << ";LAYER_TOTALTIME:" << print_time_layer << new_line;
 
-        std::vector<double> picasoCurrSpeedProfileTime = std::vector<double>(static_cast<unsigned char>(PicasoSpeedProfile::NumPicasoSpeedProfiles), 0.0);
-        double print_time_total = 0.0;
+		PicasoPrintModeEstimate totalEstimates = getPicasoPrintModeEstimate(scene, total_print_times_pathConfig);
+		// <Total>
+		// Report Total Durations
+		for (auto it = totalEstimates.durations.begin(); it != totalEstimates.durations.end(); ++it)
+		{
+			for (size_t n = 0; n < it->second.size(); n++)
+			{
+				*output_stream << "M1112 T" << it->first
+					<< " S" << n
+					<< " P" << PrecisionedDouble{ 0, it->second[n] } << new_line;
+			}
+		}
+		// Report Layer Additional Counters
+		*output_stream << "M1114"
+			<< " Z" << totalEstimates.zhopp_count
+			<< " E" << totalEstimates.retract_count
+			<< " P" << PrecisionedDouble{ 0, totalEstimates.extra_time } << new_line;
+		// </Total>
+	}
 
-        for (size_t i = 0; i < printTimePerFeature.size(); i++)
-        {
-            PrintFeatureType feature = (PrintFeatureType)i;
-            double value = printTimePerFeature[i].value;
-
-            PicasoSpeedProfile profile = getPicasoSpeedProfile(feature);
-            bool is_counters = profile == PicasoSpeedProfile::Counters;
-
-            if (!is_counters)
-            {
-                size_t profile_ind = (size_t)profile;
-                picasoCurrSpeedProfileTime[profile_ind] += value;
-                print_time_total += value;
-            }
-
-            *output_stream << (is_counters ? ";CURR_COUNT_" : ";CURR_TIME_") << printFeatureTypeToString(feature) << ":" << value << new_line;
-        }
-        *output_stream << ";CURR_TOTALTIME:" << print_time_total << new_line;
-
-        *output_stream << ";PATH_PROFILES" << new_line;
-        // Layer values
-        for (size_t i = 0; i < picasoLayerSpeedProfileTime.size(); i++)
-        {
-            PicasoSpeedProfile profile = (PicasoSpeedProfile)i;
-            double value = picasoLayerSpeedProfileTime[i];
-            *output_stream << ";LAYER_PATH_" << picasoSpeedProfileToString(profile) << ":" << value << new_line;
-        }
-        std::vector<double> picasoLayerPrintModes = getPicasoPrintModes(estimates);
-        for (size_t i = 0; i < (int)PicasoPrintMode::NumPicasoPrintModes; i++)
-        {
-            *output_stream << ";LAYER_TASK_TIME_" << i << "=" << (int)(picasoLayerPrintModes[i] / 60) << new_line; // in minutes
-        }
-        // Current incremental values
-        for (size_t i = 0; i < picasoCurrSpeedProfileTime.size(); i++)
-        {
-            PicasoSpeedProfile profile = (PicasoSpeedProfile)i;
-            double value = picasoCurrSpeedProfileTime[i];
-            *output_stream << ";CURR_PATH_" << picasoSpeedProfileToString(profile) << ":" << value << new_line;
-        }
-        std::vector<double> picasoCurrPrintModes = getPicasoPrintModes(printTimePerFeature);
-        for (size_t i = 0; i < (int)PicasoPrintMode::NumPicasoPrintModes; i++)
-        {
-            *output_stream << ";CURR_TASK_TIME_" << i << "=" << (int)(picasoCurrPrintModes[i] / 60) << new_line; // in minutes
-        }
-    }
-
-    writeTimeComment(getSumTotalPrintTimes());
+	writeTimeComment(getSumTotalPrintTimes());
 }
 
 void GCodeExport::writeComment(const std::string& unsanitized_comment)
@@ -982,13 +974,13 @@ void GCodeExport::writeTypeComment(const PrintFeatureType& type)
     {
         *output_stream << "M1106 S" << (int)type << " ;" << printFeatureTypeToString(type) << new_line;
 
-        PicasoSpeedProfile profile = getPicasoSpeedProfile(type);
+        PicasoSpeedProfile profile = PrintFeatureConverter::toPicasoSpeedProfile(type);
         if (current_speed_profile != profile)
         { // changed
             //*output_stream << ";END " << picasoSpeedProfileToString(current_speed_profile) << new_line;
             current_speed_profile = profile;
             *output_stream << "M1107 S" << (int)current_speed_profile << " ;" << picasoSpeedProfileToString(current_speed_profile) << new_line;
-            *output_stream << picasoSpeedProfileToKissComment(current_speed_profile) << new_line;
+            //*output_stream << picasoSpeedProfileToKissComment(current_speed_profile) << new_line;
         }
         //return;
     }
@@ -1026,90 +1018,46 @@ void GCodeExport::writeTypeComment(const PrintFeatureType& type)
         case PrintFeatureType::MoveRetraction:
         case PrintFeatureType::NoneType:
         case PrintFeatureType::NumPrintFeatureTypes:
-		// PicasoCounters
-		case PrintFeatureType::Retract:
-		case PrintFeatureType::ZHopp:
             // do nothing
             break;
     }
 }
 
-
-PicasoSpeedProfile GCodeExport::getPicasoSpeedProfile(PrintFeatureType type)
-{
-    switch (type)
-    {
-    case PrintFeatureType::OuterWall:
-    case PrintFeatureType::Skin:
-        return PicasoSpeedProfile::Perimeter;
-
-    case PrintFeatureType::InnerWall:
-    case PrintFeatureType::SkirtBrim:
-        return PicasoSpeedProfile::Loops;
-
-    case PrintFeatureType::Support:
-    case PrintFeatureType::SupportInfill:
-        return PicasoSpeedProfile::Support;
-
-    case PrintFeatureType::SupportInterface:
-        return PicasoSpeedProfile::InterfaceSupport;
-
-    case PrintFeatureType::Infill:
-        return PicasoSpeedProfile::Infill;
-
-    case PrintFeatureType::Retract:
-    case PrintFeatureType::ZHopp:
-        return PicasoSpeedProfile::Counters;
-
-    case PrintFeatureType::NoneType:
-    case PrintFeatureType::MoveCombing:
-    case PrintFeatureType::MoveRetraction:
-    case PrintFeatureType::NumPrintFeatureTypes:
-    default:
-        return PicasoSpeedProfile::Undefined;
-    }
-}
-
-PicasoSpeedProfile GCodeExport::getPicasoSpeedProfile(PathConfigFeature feature)
+Velocity GCodeExport::getFeatureSpeed(const Scene& scene, const PathConfigFeature& feature)
 {
 	switch (feature)
 	{
-	case PathConfigFeature::Inset0: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::Inset1: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::InsetX: return PicasoSpeedProfile::Loops;
-
-	case PathConfigFeature::BridgeInset0: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::BridgeInset1: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::BridgeInsetX: return PicasoSpeedProfile::Loops;
-	case PathConfigFeature::BridgeSkin1: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::BridgeSkin2: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::BridgeSkin3: return PicasoSpeedProfile::Perimeter;
-
-	case PathConfigFeature::Skin: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::Roofing: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::Infill: return PicasoSpeedProfile::Infill;
-	case PathConfigFeature::Ironing: return PicasoSpeedProfile::Perimeter;
-	case PathConfigFeature::PerimeterGap: return PicasoSpeedProfile::Perimeter;
-
-	case PathConfigFeature::RaftBase: return PicasoSpeedProfile::InterfaceSupport;
-	case PathConfigFeature::RaftInterface: return PicasoSpeedProfile::Support;
-	case PathConfigFeature::RaftSurface: return PicasoSpeedProfile::InterfaceSupport;
-
-	case PathConfigFeature::ExtruderTravel: return PicasoSpeedProfile::Travel;
-	case PathConfigFeature::ExtruderSkirtBrim: return PicasoSpeedProfile::Loops;
-	case PathConfigFeature::ExtruderPrimeTower: return PicasoSpeedProfile::Support;
-
-	case PathConfigFeature::SupportRoof: return PicasoSpeedProfile::InterfaceSupport;
-	case PathConfigFeature::SupportInfill: return PicasoSpeedProfile::Support;
-	case PathConfigFeature::SupportBottom: return PicasoSpeedProfile::InterfaceSupport;
-	case PathConfigFeature::SupportUnderRoof: return PicasoSpeedProfile::InterfaceSupport;
-	case PathConfigFeature::SupportAboveBottom: return PicasoSpeedProfile::InterfaceSupport;
-
-	default: return PicasoSpeedProfile::Undefined;
+	case PathConfigFeature::Inset0: return scene.settings.get<Velocity>("speed_wall_0");
+	case PathConfigFeature::Inset1: return scene.settings.get<Velocity>("speed_wall_1");
+	case PathConfigFeature::InsetX: return scene.settings.get<Velocity>("speed_wall_x");
+	case PathConfigFeature::BridgeInset0: return scene.settings.get<Velocity>("bridge_wall_speed");
+	case PathConfigFeature::BridgeInset1: return scene.settings.get<Velocity>("bridge_wall_speed");
+	case PathConfigFeature::BridgeInsetX: return scene.settings.get<Velocity>("bridge_wall_speed");
+	case PathConfigFeature::BridgeSkin1: return scene.settings.get<Velocity>("bridge_skin_speed");
+	case PathConfigFeature::BridgeSkin2: return scene.settings.get<Velocity>("bridge_skin_speed_2");
+	case PathConfigFeature::BridgeSkin3: return scene.settings.get<Velocity>("bridge_skin_speed_3");
+	case PathConfigFeature::Skin: return scene.settings.get<Velocity>("speed_topbottom");
+	case PathConfigFeature::Roofing: return scene.settings.get<Velocity>("speed_roofing");
+	case PathConfigFeature::Flooring: return scene.settings.get<Velocity>("speed_flooring");
+	case PathConfigFeature::Infill: return scene.settings.get<Velocity>("speed_infill");
+	case PathConfigFeature::Ironing: return scene.settings.get<Velocity>("speed_ironing");
+	case PathConfigFeature::PerimeterGap: return scene.settings.get<Velocity>("speed_topbottom");
+	case PathConfigFeature::RaftBase: return scene.settings.get<Velocity>("raft_base_speed");
+	case PathConfigFeature::RaftInterface: return scene.settings.get<Velocity>("raft_interface_speed");
+	case PathConfigFeature::RaftSurface: return scene.settings.get<Velocity>("raft_surface_speed");
+	case PathConfigFeature::ExtruderTravel: return scene.settings.get<Velocity>("speed_travel");
+	case PathConfigFeature::ExtruderSkirtBrim: return scene.settings.get<Velocity>("skirt_brim_speed");
+	case PathConfigFeature::ExtruderPrimeTower: return scene.settings.get<Velocity>("speed_prime_tower");
+	case PathConfigFeature::SupportRoof: return scene.settings.get<Velocity>("speed_support_roof");
+	case PathConfigFeature::SupportInfill: return scene.settings.get<Velocity>("speed_support_infill");
+	case PathConfigFeature::SupportBottom: return scene.settings.get<Velocity>("speed_support_bottom");
+	case PathConfigFeature::SupportUnderRoof: return scene.settings.get<Velocity>("speed_support_under_roof");
+	case PathConfigFeature::SupportAboveBottom: return scene.settings.get<Velocity>("speed_support_above_bottom");
+	default: return Velocity(1.0);
 	}
 }
 
-std::string GCodeExport::picasoSpeedProfileToKissComment(PicasoSpeedProfile type)
+std::string GCodeExport::picasoSpeedProfileToKissComment(const PicasoSpeedProfile& type)
 {
     switch (type)
     {
@@ -1118,13 +1066,13 @@ std::string GCodeExport::picasoSpeedProfileToKissComment(PicasoSpeedProfile type
     case PicasoSpeedProfile::Support: return "; 'Support'";
     case PicasoSpeedProfile::InterfaceSupport: return "; 'Support Interface Path'";
     case PicasoSpeedProfile::Infill: return "; 'Solid Path'";
-    case PicasoSpeedProfile::Counters: return "; !!! Counters";
+	case PicasoSpeedProfile::Travel: return "; 'Travel'";
     case PicasoSpeedProfile::Undefined:
     default: return "; Undefined";
     }
 }
 
-std::string GCodeExport::picasoSpeedProfileToString(PicasoSpeedProfile type)
+std::string GCodeExport::picasoSpeedProfileToString(const PicasoSpeedProfile& type)
 {
     switch (type)
     {
@@ -1133,13 +1081,13 @@ std::string GCodeExport::picasoSpeedProfileToString(PicasoSpeedProfile type)
     case PicasoSpeedProfile::Support: return "Support";
     case PicasoSpeedProfile::InterfaceSupport: return "InterfaceSupport";
     case PicasoSpeedProfile::Infill: return "Infill";
-    case PicasoSpeedProfile::Counters: return "Counters";
+    case PicasoSpeedProfile::Travel: return "Travel";
     case PicasoSpeedProfile::Undefined:
     default: return "Undefined";
     }
 }
 
-std::string GCodeExport::printFeatureTypeToString(PrintFeatureType type)
+std::string GCodeExport::printFeatureTypeToString(const PrintFeatureType& type)
 {
     switch (type)
     {
@@ -1154,8 +1102,6 @@ std::string GCodeExport::printFeatureTypeToString(PrintFeatureType type)
     case PrintFeatureType::MoveCombing: return "MoveCombing";
     case PrintFeatureType::MoveRetraction: return "MoveRetraction";
     case PrintFeatureType::SupportInterface: return "SupportInterface";
-    case PrintFeatureType::Retract: return "Retract";
-    case PrintFeatureType::ZHopp: return "ZHopp";
     default: return "Undefined";
     }
 }
@@ -1163,11 +1109,19 @@ std::string GCodeExport::printFeatureTypeToString(PrintFeatureType type)
 void GCodeExport::writeLayerComment(const LayerIndex layer_nr)
 {
     *output_stream << ";LAYER:" << layer_nr << new_line;
+	if (this->flavor == EGCodeFlavor::PICASO)
+	{
+		*output_stream << "M532 L" << layer_nr << new_line;
+	}
 }
 
 void GCodeExport::writeLayerCountComment(const size_t layer_count)
 {
     *output_stream << ";LAYER_COUNT:" << layer_count << new_line;
+	if (this->flavor == EGCodeFlavor::PICASO)
+	{
+		*output_stream << "M530 S1 L" << layer_count << new_line;
+	}
 }
 
 void GCodeExport::writeLine(const char* line)
@@ -1664,7 +1618,7 @@ void GCodeExport::writeZhopStart(const coord_t hop_height, Velocity speed/*= 0*/
         if (firmware_zhopp && flavor == EGCodeFlavor::PICASO)
         {
             // Z-axis move down
-            *output_stream << "G10 Z" << MMtoStream{ current_layer_z + is_z_hopped };
+            *output_stream << "G10 F" << PrecisionedDouble{ 1, speed * 60 } << " Z" << MMtoStream{ current_layer_z + is_z_hopped };
         }
         else
 #endif // PICASO_HW_ZHOPP
@@ -1701,7 +1655,7 @@ void GCodeExport::writeZhopEnd(Velocity speed/*= 0*/)
         if (firmware_zhopp && flavor == EGCodeFlavor::PICASO)
         {
             // Z-axis move down
-            *output_stream << "G11 Z" << MMtoStream{ current_layer_z };
+            *output_stream << "G11 F" << PrecisionedDouble{ 1, speed * 60 } << " Z" << MMtoStream{ current_layer_z };
         }
         else
 #endif
@@ -2107,6 +2061,9 @@ void GCodeExport::writeJerk(const Velocity& jerk)
             case EGCodeFlavor::REPRAP:
                 *output_stream << "M566 X" << PrecisionedDouble{2, jerk * 60} << " Y" << PrecisionedDouble{2, jerk * 60} << new_line;
                 break;
+			case EGCodeFlavor::PICASO:
+				// jerk embeded in firmware
+				break;
             default:
                 *output_stream << "M205 X" << PrecisionedDouble{2, jerk} << " Y" << PrecisionedDouble{2, jerk} << new_line;
                 break;

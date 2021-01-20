@@ -24,8 +24,10 @@ WallsComputation::WallsComputation(const Settings& settings, const LayerIndex la
  */
 void WallsComputation::generateInsets(SliceLayerPart* part)
 {
+	const bool optimize_wall_printing_order = settings.get<bool>("optimize_wall_printing_order");
     size_t inset_count = settings.get<size_t>("wall_line_count");
     const bool spiralize = settings.get<bool>("magic_spiralize");
+
     if (spiralize && layer_nr < LayerIndex(settings.get<size_t>("bottom_layers")) && ((layer_nr % 2) + 2) % 2 == 1) //Add extra insets every 2 layers when spiralizing. This makes bottoms of cups watertight.
     {
         inset_count += 5;
@@ -66,7 +68,14 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
         }
         else if (i == 1)
         {
-            part->insets[1] = part->insets[0].offset(-line_width_1 / 2 + wall_0_inset - line_width_x / 2);
+			if (optimize_wall_printing_order)
+			{
+				part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_x / 2);
+			}
+			else
+			{
+				part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_1 / 2);
+			}
         }
         else
         {
@@ -88,7 +97,14 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
             }
             else if (i == 1)
             {
-                alternative_inset = part->insets[0].offset(-(line_width_1 - try_smaller) / 2 + wall_0_inset - line_width_x / 2);
+				if (optimize_wall_printing_order)
+				{
+					alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_x / 2);
+				}
+				else
+				{
+					alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_1 / 2);
+				}
             }
             else
             {

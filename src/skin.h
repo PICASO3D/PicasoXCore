@@ -128,14 +128,6 @@ protected:
     void generateInfill(SliceLayerPart& part, const Polygons& skin);
 
     /*!
-     * Calculate the areas which are 'directly' under air,
-     * remove them from the \ref SkinPart::inner_infill and save them in the \ref SkinPart::roofing_fill of the \p part
-     * 
-     * \param[in,out] part Where to get the sSkinParts to get the outline info from and to store the roofing areas
-     */
-    void generateRoofing(SliceLayerPart& part);
-
-    /*!
      * Generate the skin insets and the inner infill area
      * 
      * \param part The part where the skin outline information (input) is stored and
@@ -143,46 +135,44 @@ protected:
      */
     void generateSkinInsetsAndInnerSkinInfill(SliceLayerPart* part);
 
-    /*!
-     * Generate the skin insets of a skin part
-     * 
-     * \param skin_part The part where the skin outline information (input) is stored and
-     * where the skin insets (output) are stored.
-     */
-    void generateSkinInsets(SkinPart& skin_part);
 
-    /*!
-     * Generate the inner_infill_area of a skin part
-     * 
-     * \param skin_part The part where the skin outline information (input) is stored and
-     * where the inner infill area (output) is stored.
-     */
-    void generateInnerSkinInfill(SkinPart& skin_part);
+	void generateSkinPartOutlines(SliceLayerPart& layer_part, SkinPart& skin_part, const size_t skin_roof_layer_count, const size_t skin_floor_layer_count, const size_t wall_line_count);
+	std::vector<Polygons> generateOutlineInsets(const Polygons& outline, const coord_t line_width, const size_t inset_count);
+	Polygons generateInsetsInnerInfill(std::vector<Polygons>& insets, Polygons& outline, const coord_t line_width);
 
 protected:
     const LayerIndex layer_nr; //!< The index of the layer for which to generate the skins and infill.
     SliceMeshStorage& mesh; //!< The storage where the layer outline information (input) is stored and where the skin insets and fill areas (output) are stored.
     const size_t bottom_layer_count; //!< The number of layers of bottom skin
     const size_t top_layer_count; //!< The number of layers of top skin
+	const size_t roofing_layer_count;
+	const size_t flooring_layer_count;
     const size_t wall_line_count; //!< The number of walls, i.e. the number of the wall from which to offset.
-    const coord_t skin_line_width; //!< The line width of the skin.
+    const coord_t roofing_line_width; //!< The line width of the skin.
+	const coord_t skin_line_width; //!< The line width of the skin.
+	const coord_t flooring_line_width; //!< The line width of the skin.
     const coord_t wall_line_width_0; //!< The line width of the outer wall
 	const coord_t wall_line_width_1; //!< The line width of the outer wall
     const coord_t wall_line_width_x; //!< The line width of the inner most wall
     const coord_t innermost_wall_line_width; //!< width of the innermost wall lines
     const coord_t infill_skin_overlap; //!< overlap distance between infill and skin
+	const size_t roofing_inset_count; //!< The number of perimeters to surround the roofing
     const size_t skin_inset_count; //!< The number of perimeters to surround the skin
+	const size_t flooring_inset_count; //!< The number of perimeters to surround the roofing
     const bool no_small_gaps_heuristic; //!< A heuristic which assumes there will be no small gaps between bottom and top skin with a z size smaller than the skin size itself
     const bool process_infill; //!< Whether to process infill, i.e. whether there's a positive infill density or there are infill meshes modifying this mesh.
+	const bool optimize_wall_printing_order;
 
     coord_t top_reference_wall_expansion; //!< The horizontal expansion to apply to the top reference wall in order to shrink the top skin
     coord_t bottom_reference_wall_expansion; //!< The horizontal expansion to apply to the bottom reference wall in order to shrink the bottom skin
     coord_t top_skin_expand_distance; //!< The distance by which the top skins should be larger than the original top skins.
     coord_t bottom_skin_expand_distance; //!< The distance by which the bottom skins should be larger than the original bottom skins.
-    const size_t top_reference_wall_idx; //!< The wall of the layer above to consider as inside. Lower index means more skin.
-    const size_t bottom_reference_wall_idx; //!< The wall of the layer below to consider as inside. Lower index means more skin.
+    const size_t top_reference_wall_num; //!< The wall of the layer above to consider as inside. Lower index means more skin.
+    const size_t bottom_reference_wall_num; //!< The wall of the layer below to consider as inside. Lower index means more skin.
 private:
-    static coord_t getSkinLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the skin line width, which might be different for the first layer.
+	static coord_t getRoofingLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the roofing skin line width, which might be different for the first layer.
+    static coord_t getSkinLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the top/bottom skin line width, which might be different for the first layer.
+	static coord_t getFlooringLineWidth(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the flooring skin line width, which might be different for the first layer.
     static coord_t getWallLineWidth0(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the outer wall line width, which might be different for the first layer
 	static coord_t getWallLineWidth1(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the outer wall line width, which might be different for the first layer
     static coord_t getWallLineWidthX(const SliceMeshStorage& mesh, const LayerIndex& layer_nr); //!< Compute the inner wall line widths, which might be different for the first layer
@@ -193,9 +183,9 @@ private:
      * 
      * \param part_here The part for which to check
      * \param layer2_nr The layer index from which to gather the outlines
-     * \param wall_idx The 1-based wall index for the walls to grab. e.g. the outermost walls or the second walls. Zero means the outline.
+     * \param wall_num The 1-based wall index for the walls to grab. e.g. the outermost walls or the second walls. Zero means the outline.
      */
-    Polygons getWalls(const SliceLayerPart& part_here, int layer2_nr, unsigned int wall_idx);
+    Polygons getWalls(const SliceLayerPart& part_here, int layer2_nr, unsigned int wall_num);
 
     /*!
      * Get the wall index of the reference wall for either the top or bottom skin.

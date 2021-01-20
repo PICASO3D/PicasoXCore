@@ -53,9 +53,12 @@ public:
         GCodePathConfig bridge_skin_config2; // used for second bridge layer
         GCodePathConfig bridge_skin_config3; // used for third bridge layer
         GCodePathConfig roofing_config;
+		GCodePathConfig flooring_config;
         std::vector<GCodePathConfig> infill_config;
         GCodePathConfig ironing_config;
         GCodePathConfig perimeter_gap_config;
+		GCodePathConfig inset0_config_seam_cross_start;
+		GCodePathConfig inset0_config_seam_cross_finish;
 
         MeshPathConfigs(const SliceMeshStorage& mesh, const coord_t layer_thickness, const LayerIndex& layer_nr, const std::vector<Ratio>& line_width_factor_per_extruder);
         void smoothAllSpeeds(GCodePathConfig::SpeedDerivatives first_layer_config, const LayerIndex& layer_nr, const LayerIndex& max_speed_layer);

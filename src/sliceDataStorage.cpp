@@ -199,11 +199,13 @@ bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr) const
             return false;
         }
     }
-    if (settings.get<size_t>("wall_line_count") > 0 && settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
+    if (settings.get<size_t>("wall_line_count") > 0 
+		&& settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
     {
         return true;
     }
-	if (settings.get<size_t>("wall_line_count") > 1 && settings.get<ExtruderTrain&>("wall_1_extruder_nr").extruder_nr == extruder_nr)
+	if (settings.get<size_t>("wall_line_count") > 1 
+		&& settings.get<ExtruderTrain&>("wall_1_extruder_nr").extruder_nr == extruder_nr)
 	{
 		return true;
 	}
@@ -216,78 +218,69 @@ bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr) const
     {
         return true;
     }
-    if ((settings.get<size_t>("top_layers") > 0 || settings.get<size_t>("bottom_layers") > 0) && settings.get<ExtruderTrain&>("top_bottom_extruder_nr").extruder_nr == extruder_nr)
-    {
-        return true;
-    }
-    if ((settings.get<size_t>("top_layers") > 0 || settings.get<size_t>("bottom_layers") > 0) && settings.get<size_t>("roofing_layer_count") > 0 && settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr == extruder_nr)
-    {
-        return true;
-    }
+
+	if (settings.get<size_t>("top_layers") > 0 || settings.get<size_t>("bottom_layers") > 0)
+	{
+		if (settings.get<size_t>("roofing_layer_count") > 0 
+			&& settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr == extruder_nr)
+		{
+			return true;
+		}
+		if (settings.get<ExtruderTrain&>("top_bottom_extruder_nr").extruder_nr == extruder_nr)
+		{
+			return true;
+		}
+		if (settings.get<size_t>("flooring_layer_count") > 0 
+			&& settings.get<ExtruderTrain&>("flooring_extruder_nr").extruder_nr == extruder_nr)
+		{
+			return true;
+		}
+	}
+
     return false;
 }
 
 bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr, const LayerIndex& layer_nr) const
 {
-    if (layer_nr < 0 || layer_nr >= static_cast<int>(layers.size()))
-    {
-        return false;
-    }
-    if (settings.get<bool>("anti_overhang_mesh")
-        || settings.get<bool>("support_mesh"))
-    { // object is not printed as object, but as support.
-        return false;
-    }
-    const SliceLayer& layer = layers[layer_nr];
-    if (settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr 
+	if (layer_nr < 0 || layer_nr >= static_cast<int>(layers.size()))
+	{
+		return false;
+	}
+	if (settings.get<bool>("anti_overhang_mesh")
+		|| settings.get<bool>("support_mesh"))
+	{ // object is not printed as object, but as support.
+		return false;
+	}
+
+	const SliceLayer& layer = layers[layer_nr];
+
+	if (settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr
 		&& (settings.get<size_t>("wall_line_count") > 0 || settings.get<size_t>("skin_outline_count") > 0))
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            if (part.insets.size() > 0 && part.insets[0].size() > 0)
-            {
-                return true;
-            }
-            for (const SkinPart& skin_part : part.skin_parts)
-            {
-                if (!skin_part.insets.empty())
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    if (settings.get<FillPerimeterGapMode>("fill_perimeter_gaps") != FillPerimeterGapMode::NOWHERE
-        && (settings.get<size_t>("wall_line_count") > 0 || settings.get<size_t>("skin_outline_count") > 0)
-        && settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            if (part.perimeter_gaps.size() > 0)
-            {
-                return true;
-            }
-            for (const SkinPart& skin_part : part.skin_parts)
-            {
-                if (skin_part.perimeter_gaps.size() > 0)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    if (settings.get<bool>("fill_outline_gaps")
-        && settings.get<size_t>("wall_line_count") > 0
-        && settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            if (part.outline_gaps.size() > 0)
-            {
-                return true;
-            }
-        }
-    }
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			if (part.insets.size() > 0 && part.insets[0].size() > 0)
+			{
+				return true;
+			}
+			//// This is bug (skin_extruders != wall_extruders)
+			for (const SkinPart& skin_part : part.skin_parts)
+			{
+				if (!skin_part.roof_insets.empty())
+				{
+					return true;
+				}
+				if (!skin_part.skin_insets.empty())
+				{
+					return true;
+				}
+				if (!skin_part.floor_insets.empty())
+				{
+					return true;
+				}
+			}
+		}
+	}
 	if ((settings.get<size_t>("wall_line_count") > 1 || settings.get<bool>("alternate_extra_perimeter"))
 		&& settings.get<ExtruderTrain&>("wall_1_extruder_nr").extruder_nr == extruder_nr)
 	{
@@ -299,54 +292,118 @@ bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr, const LayerIn
 			}
 		}
 	}
-    if ((settings.get<size_t>("wall_line_count") > 1 || settings.get<bool>("alternate_extra_perimeter")) 
+	if ((settings.get<size_t>("wall_line_count") > 1 || settings.get<bool>("alternate_extra_perimeter"))
 		&& settings.get<ExtruderTrain&>("wall_x_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            if (part.insets.size() > 1 && part.insets[1].size() > 0)
-            {
-                return true;
-            }
-        }
-    }
-    if (settings.get<coord_t>("infill_line_distance") > 0 && settings.get<ExtruderTrain&>("infill_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            if (part.getOwnInfillArea().size() > 0)
-            {
-                return true;
-            }
-        }
-    }
-    if (settings.get<ExtruderTrain&>("top_bottom_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            for (const SkinPart& skin_part : part.skin_parts)
-            {
-                if (!skin_part.inner_infill.empty())
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    if (settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr == extruder_nr)
-    {
-        for (const SliceLayerPart& part : layer.parts)
-        {
-            for (const SkinPart& skin_part : part.skin_parts)
-            {
-                if (!skin_part.roofing_fill.empty())
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			if (part.insets.size() > 1 && part.insets[1].size() > 0)
+			{
+				return true;
+			}
+		}
+	}
+
+	// Roof skin
+	if ((settings.get<size_t>("roofing_layer_count") > 0)
+		&& settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			for (const SkinPart& skin_part : part.skin_parts)
+			{
+				if (!skin_part.roof_inner_infill.empty())
+				{
+					return true;
+				}
+				if (!skin_part.roof_insets.empty())
+				{
+					return true;
+				}
+			}
+		}
+	}
+	// TopBottom skin
+	if ((settings.get<size_t>("top_layers") > 0 || settings.get<size_t>("bottom_layers") > 0)
+		&& settings.get<ExtruderTrain&>("top_bottom_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			for (const SkinPart& skin_part : part.skin_parts)
+			{
+				if (!skin_part.skin_inner_infill.empty())
+				{
+					return true;
+				}
+				if (!skin_part.skin_insets.empty())
+				{
+					return true;
+				}
+			}
+		}
+	}
+	// Floor skin
+	if ((settings.get<size_t>("flooring_layer_count") > 0)
+		&& settings.get<ExtruderTrain&>("flooring_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			for (const SkinPart& skin_part : part.skin_parts)
+			{
+				if (!skin_part.floor_inner_infill.empty())
+				{
+					return true;
+				}
+				if (!skin_part.floor_insets.empty())
+				{
+					return true;
+				}
+			}
+		}
+	}
+	if (settings.get<FillPerimeterGapMode>("fill_perimeter_gaps") != FillPerimeterGapMode::NOWHERE
+		&& (settings.get<size_t>("wall_line_count") > 0 || settings.get<size_t>("skin_outline_count") > 0)
+		&& settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			if (part.perimeter_gaps.size() > 0)
+			{
+				return true;
+			}
+			//// This is bug (skin_extruders != wall_extruders)
+			for (const SkinPart& skin_part : part.skin_parts)
+			{
+				if (skin_part.perimeter_gaps.size() > 0)
+				{
+					return true;
+				}
+			}
+		}
+	}
+	if (settings.get<bool>("fill_outline_gaps")
+		&& settings.get<size_t>("wall_line_count") > 0
+		&& settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			if (part.outline_gaps.size() > 0)
+			{
+				return true;
+			}
+		}
+	}
+	if (settings.get<coord_t>("infill_line_distance") > 0 && settings.get<ExtruderTrain&>("infill_extruder_nr").extruder_nr == extruder_nr)
+	{
+		for (const SliceLayerPart& part : layer.parts)
+		{
+			if (part.getOwnInfillArea().size() > 0)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 bool SliceMeshStorage::isPrinted() const

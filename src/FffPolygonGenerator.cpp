@@ -554,7 +554,8 @@ void FffPolygonGenerator::processPerimeterGaps(SliceDataStorage& storage)
         constexpr int perimeter_gaps_extra_offset = 15; // extra offset so that the perimeter gaps aren't created everywhere due to rounding errors
         const bool fill_perimeter_gaps = mesh.settings.get<FillPerimeterGapMode>("fill_perimeter_gaps") != FillPerimeterGapMode::NOWHERE
             && !mesh_group_settings.get<bool>("magic_spiralize");
-        bool filter_out_tiny_gaps = mesh.settings.get<bool>("filter_out_tiny_gaps");
+		const bool optimize_wall_printing_order = mesh.settings.get<bool>("optimize_wall_printing_order");
+		bool filter_out_tiny_gaps = mesh.settings.get<bool>("filter_out_tiny_gaps");
 
         if (!fill_perimeter_gaps)
         {
@@ -571,29 +572,59 @@ void FffPolygonGenerator::processPerimeterGaps(SliceDataStorage& storage)
                 );
             SliceLayer& layer = mesh.layers[layer_nr];
             coord_t wall_line_width_0 = mesh.settings.get<coord_t>("wall_line_width_0");
+			coord_t wall_line_width_1 = mesh.settings.get<coord_t>("wall_line_width_1");
             coord_t wall_line_width_x = mesh.settings.get<coord_t>("wall_line_width_x");
             coord_t skin_line_width = mesh.settings.get<coord_t>("skin_line_width");
-            if (layer_nr == 0)
-            {
-                const ExtruderTrain& train_wall_0 = mesh.settings.get<ExtruderTrain&>("wall_0_extruder_nr");
-                wall_line_width_0 *= train_wall_0.settings.get<Ratio>("initial_layer_line_width_factor");
-                const ExtruderTrain& train_wall_x = mesh.settings.get<ExtruderTrain&>("wall_x_extruder_nr");
-                wall_line_width_x *= train_wall_x.settings.get<Ratio>("initial_layer_line_width_factor");
-                const ExtruderTrain& train_skin = mesh.settings.get<ExtruderTrain&>("top_bottom_extruder_nr");
-                skin_line_width *= train_skin.settings.get<Ratio>("initial_layer_line_width_factor");
-            }
+			coord_t roofing_line_width = mesh.settings.get<coord_t>("roofing_line_width");
+			coord_t flooring_line_width = mesh.settings.get<coord_t>("flooring_line_width");
+			if (layer_nr == 0)
+			{
+				const ExtruderTrain& train_wall_0 = mesh.settings.get<ExtruderTrain&>("wall_0_extruder_nr");
+				wall_line_width_0 *= train_wall_0.settings.get<Ratio>("initial_layer_line_width_factor");
+				const ExtruderTrain& train_wall_1 = mesh.settings.get<ExtruderTrain&>("wall_1_extruder_nr");
+				wall_line_width_1 *= train_wall_1.settings.get<Ratio>("initial_layer_line_width_factor");
+				const ExtruderTrain& train_wall_x = mesh.settings.get<ExtruderTrain&>("wall_x_extruder_nr");
+				wall_line_width_x *= train_wall_x.settings.get<Ratio>("initial_layer_line_width_factor");
+
+				const ExtruderTrain& train_roofing = mesh.settings.get<ExtruderTrain&>("roofing_extruder_nr");
+				roofing_line_width *= train_roofing.settings.get<Ratio>("initial_layer_line_width_factor");
+				const ExtruderTrain& train_top_bottom = mesh.settings.get<ExtruderTrain&>("top_bottom_extruder_nr");
+				skin_line_width *= train_top_bottom.settings.get<Ratio>("initial_layer_line_width_factor");
+				const ExtruderTrain& train_flooring = mesh.settings.get<ExtruderTrain&>("flooring_extruder_nr");
+				flooring_line_width *= train_flooring.settings.get<Ratio>("initial_layer_line_width_factor");
+			}
             for (SliceLayerPart& part : layer.parts)
             {
                  // handle perimeter gaps of normal insets
                 int line_width = wall_line_width_0;
-                for (unsigned int inset_idx = 0; static_cast<int>(inset_idx) < static_cast<int>(part.insets.size()) - 1; inset_idx++)
-                {
-                    const Polygons outer = part.insets[inset_idx].offset(-1 * line_width / 2 - perimeter_gaps_extra_offset);
-                    line_width = wall_line_width_x;
+				
+				if (optimize_wall_printing_order)
+				{
+					for (unsigned int inset_idx = 0; static_cast<int>(inset_idx) < static_cast<int>(part.insets.size()) - 1; inset_idx++)
+					{
+						const Polygons outer = part.insets[inset_idx].offset(-1 * line_width / 2 - perimeter_gaps_extra_offset);
+						line_width = wall_line_width_x;
 
-                    Polygons inner = part.insets[inset_idx + 1].offset(line_width / 2);
-                    part.perimeter_gaps.add(outer.difference(inner));
-                }
+						Polygons inner = part.insets[inset_idx + 1].offset(line_width / 2);
+						part.perimeter_gaps.add(outer.difference(inner));
+					}
+				}
+				else 
+				{
+					for (unsigned int inset_idx = 0; static_cast<int>(inset_idx) < static_cast<int>(part.insets.size()) - 1; inset_idx++)
+					{
+						const Polygons outer = part.insets[inset_idx].offset(-1 * line_width / 2 - perimeter_gaps_extra_offset);
+						
+						switch (inset_idx)
+						{
+						case 0: line_width = wall_line_width_1; break;
+						case 1: line_width = wall_line_width_x; break;
+						}
+
+						Polygons inner = part.insets[inset_idx + 1].offset(line_width / 2);
+						part.perimeter_gaps.add(outer.difference(inner));
+					}
+				}
 
                 if (filter_out_tiny_gaps) {
                     part.perimeter_gaps.removeSmallAreas(2 * INT2MM(wall_line_width_0) * INT2MM(wall_line_width_0)); // remove small outline gaps to reduce blobs on outside of model
@@ -616,24 +647,45 @@ void FffPolygonGenerator::processPerimeterGaps(SliceDataStorage& storage)
                 // add perimeter gaps for skin insets
                 for (SkinPart& skin_part : part.skin_parts)
                 {
-                    if (skin_part.insets.size() > 0)
-                    {
-                        // add perimeter gaps between the outer skin inset and the innermost wall
-                        const Polygons outer = skin_part.outline;
-                        const Polygons inner = skin_part.insets[0].offset(skin_line_width / 2 + perimeter_gaps_extra_offset);
-                        skin_part.perimeter_gaps.add(outer.difference(inner));
+					const coord_t surface_max_line_width = std::max(roofing_line_width, flooring_line_width);
+					bool has_insets = false;
 
-                        for (unsigned int inset_idx = 1; inset_idx < skin_part.insets.size(); inset_idx++)
-                        { // add perimeter gaps between consecutive skin walls
-                            const Polygons outer = skin_part.insets[inset_idx - 1].offset(-1 * skin_line_width / 2 - perimeter_gaps_extra_offset);
-                            const Polygons inner = skin_part.insets[inset_idx].offset(skin_line_width / 2);
-                            skin_part.perimeter_gaps.add(outer.difference(inner));
-                        }
+					// Roof small perimeter gaps
+					if (skin_part.roof_insets.size() > 0)
+					{
+						// add perimeter gaps between the outer skin inset and the innermost wall
+						const Polygons outer = skin_part.roof_outline;
+						const Polygons inner = skin_part.roof_insets[0].offset(roofing_line_width / 2 + perimeter_gaps_extra_offset);
+						skin_part.perimeter_gaps.add(outer.difference(inner));
 
-                        if (filter_out_tiny_gaps) {
-                            skin_part.perimeter_gaps.removeSmallAreas(2 * INT2MM(skin_line_width) * INT2MM(skin_line_width)); // remove small outline gaps to reduce blobs on outside of model
-                        }
-                    }
+						for (unsigned int inset_idx = 1; inset_idx < skin_part.roof_insets.size(); inset_idx++)
+						{ // add perimeter gaps between consecutive skin walls
+							const Polygons outer = skin_part.roof_insets[inset_idx - 1].offset(-1 * roofing_line_width / 2 - perimeter_gaps_extra_offset);
+							const Polygons inner = skin_part.roof_insets[inset_idx].offset(roofing_line_width / 2);
+							skin_part.perimeter_gaps.add(outer.difference(inner));
+						}
+						has_insets = true;
+					}
+					// Floor small perimeter gaps
+					if (skin_part.floor_insets.size() > 0)
+					{
+						// add perimeter gaps between the outer skin inset and the innermost wall
+						const Polygons outer = skin_part.floor_outline;
+						const Polygons inner = skin_part.floor_insets[0].offset(flooring_line_width / 2 + perimeter_gaps_extra_offset);
+						skin_part.perimeter_gaps.add(outer.difference(inner));
+
+						for (unsigned int inset_idx = 1; inset_idx < skin_part.floor_insets.size(); inset_idx++)
+						{ // add perimeter gaps between consecutive skin walls
+							const Polygons outer = skin_part.floor_insets[inset_idx - 1].offset(-1 * flooring_line_width / 2 - perimeter_gaps_extra_offset);
+							const Polygons inner = skin_part.floor_insets[inset_idx].offset(flooring_line_width / 2);
+							skin_part.perimeter_gaps.add(outer.difference(inner));
+						}
+						has_insets = true;
+					}
+
+					if (has_insets && filter_out_tiny_gaps) {
+						skin_part.perimeter_gaps.removeSmallAreas(2 * INT2MM(surface_max_line_width) * INT2MM(surface_max_line_width)); // remove small outline gaps to reduce blobs on outside of model
+					}
                 }
             }
         }
