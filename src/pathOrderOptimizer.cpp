@@ -15,6 +15,10 @@
 
 namespace cura {
 
+constexpr coord_t COINCIDENT_POINT_DISTANCE = 5; // In uM. Points closer than this may be considered overlapping / at the same place
+constexpr coord_t SQUARED_COINCIDENT_POINT_DISTANCE = COINCIDENT_POINT_DISTANCE * COINCIDENT_POINT_DISTANCE;
+
+
 
 /*
 *   c
@@ -253,6 +257,7 @@ void PathOrderOptimizer::optimize(const bool calc_points)
         int best_poly_idx = -1;
         float bestDist2 = std::numeric_limits<float>::infinity();
 
+
         for (unsigned int poly_idx = 0; poly_idx < polygons.size(); poly_idx++)
         {
             if (picked[poly_idx] || polygons[poly_idx]->size() < 1) /// skip single-point-polygons
@@ -267,28 +272,38 @@ void PathOrderOptimizer::optimize(const bool calc_points)
             if (dist2 < bestDist2 && combing_boundary)
             {
                 // using direct routing, this poly is the closest so far but as the combing boundary
-                // is available, get the combed distance and use that instead
+                // is available see if the travel would cross the combing boundary and, if so, either get
+                // the combed distance and use that instead or increase the distance to make it less attractive
                 if (PolygonUtils::polygonCollidesWithLineSegment(*combing_boundary, p, prev_point))
                 {
-                    if (!loc_to_line)
+                    if ((polygons.size() - poly_order_idx) > 100)
                     {
-                        // the combing boundary has been provided so do the initialisation
-                        // required to be able to calculate realistic travel distances to the start of new paths
-                        //const int travel_avoid_distance = 2000; // assume 2mm - not really critical for our purposes
-						const int travel_avoid_distance = combing_avoid_distance; // assume 2mm - not really critical for our purposes
-                        loc_to_line = PolygonUtils::createLocToLineGrid(*combing_boundary, travel_avoid_distance);
+                        // calculating the combing distance for lots of polygons is too time consuming so, instead,
+                        // just increase the distance to penalise travels that hit the combing boundary
+                        dist2 *= 5;
                     }
-                    CombPath comb_path;
-                    if (LinePolygonsCrossings::comb(*combing_boundary, *loc_to_line, p, prev_point, comb_path, -40, 0, false))
+                    else
                     {
-                        float dist = 0;
-                        Point last_point = p;
-                        for (const Point& comb_point : comb_path)
+                        if (!loc_to_line)
                         {
-                            dist += vSize(comb_point - last_point);
-                            last_point = comb_point;
+                            // the combing boundary has been provided so do the initialisation
+                            // required to be able to calculate realistic travel distances to the start of new paths
+                            //const int travel_avoid_distance = 2000; // assume 2mm - not really critical for our purposes
+                            const int travel_avoid_distance = combing_avoid_distance; // assume 2mm - not really critical for our purposes
+                            loc_to_line = PolygonUtils::createLocToLineGrid(*combing_boundary, travel_avoid_distance);
                         }
-                        dist2 = dist * dist;
+                        CombPath comb_path;
+                        if (LinePolygonsCrossings::comb(*combing_boundary, *loc_to_line, p, prev_point, comb_path, -40, 0, false))
+                        {
+                            float dist = 0;
+                            Point last_point = p;
+                            for (const Point& comb_point : comb_path)
+                            {
+                                dist += vSize(comb_point - last_point);
+                                last_point = comb_point;
+                            }
+                            dist2 = dist * dist;
+                        }
                     }
                 }
             }
@@ -299,6 +314,7 @@ void PathOrderOptimizer::optimize(const bool calc_points)
             }
 
         }
+
 
         if (best_poly_idx > -1) /// should always be true; we should have been able to identify the best next polygon
         {
@@ -373,9 +389,16 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
 			dist_score -= fabs(corner_angle - 1) * corner_shift;
 			break;
 		case EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_WEIGHTED:
-			//More curve is better score (reduced distance), but slightly in favour of concave curves.
-			dist_score -= fabs(corner_angle - 0.8) * corner_shift;
-			break;
+            {
+                //More curve is better score (reduced distance), but slightly in favour of concave curves.
+                float dist_score_corner = fabs(corner_angle - 1) * corner_shift;
+                if (corner_angle < 1)
+                {
+                    dist_score_corner *= 2;
+                }
+                dist_score -= dist_score_corner;
+                break;
+            }
 		case EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_SMOOTH:
 		case EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE:
 		default:
@@ -438,7 +461,7 @@ int PathOrderOptimizer::getRandomPointInPolygon(int poly_idx)
 
 static inline bool pointsAreCoincident(const Point& a, const Point& b)
 {
-    return vSize2(a - b) < 25; // points are closer than 5uM, consider them coincident
+    return vSize2(a - b) < SQUARED_COINCIDENT_POINT_DISTANCE; // points are closer than 5uM, consider them coincident
 }
 
 /**

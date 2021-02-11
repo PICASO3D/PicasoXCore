@@ -13,8 +13,9 @@ namespace cura
  *
  * This is a facade. It behaves like a double.
  */
-struct Ratio
+class Ratio
 {
+public:
     /*
      * \brief Default constructor setting the ratio to 1.
      */

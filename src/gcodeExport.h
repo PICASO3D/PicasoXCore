@@ -157,7 +157,11 @@ private:
 	TimeEstimateResult total_print_times_pathConfig;
 
     TimeEstimateCalculator estimateCalculator;
-    
+
+    unsigned int layer_nr; //!< for sending travel data
+
+	unsigned int zero_based_layer_nr; //!< PICASO correct Layer nr
+
     bool is_volumetric;
 
     bool firmware_retract; //!< whether retractions are done in the firmware, or hardcoded in E values.
@@ -167,15 +171,14 @@ private:
     bool relative_extrusion; //!< whether to use relative extrusion distances rather than absolute
 
     bool hop_when_extruder_switch; //!< Z Hop When Extruder Switch
-
-    unsigned int layer_nr; //!< for sending travel data
+    bool always_write_active_tool; //!< whether to write the active tool after sending commands to inactive tool
 
     Temperature initial_bed_temp; //!< bed temperature at the beginning of the print.
     Temperature build_volume_temperature;  //!< build volume temperature
 	
     bool last_overhang_state;
     bool last_model_on_support_state;
-
+    bool machine_heated_build_volume;  //!< does the machine have the ability to control/stabilize build-volume-temperature
 protected:
     /*!
      * Convert an E value to a value in mm (if it wasn't already in mm) for the current extruder.
@@ -255,6 +258,8 @@ public:
 
     void setLayerNr(unsigned int layer_nr);
 
+	void incZeroBasedLayerNr();
+
     void setLastOverhangState(const bool state);
 
     bool getLastOverhangState() const;
@@ -277,11 +282,6 @@ public:
     void setFirstMovementOnLayer();
 
     void setFlowRateExtrusionSettings(double max_extrusion_offset, double extrusion_offset_factor);
-
-    void addLastCoastedVolume(double last_coasted_volume) 
-    {
-        extruder_attr[current_extruder].prime_volume += last_coasted_volume; 
-    }
 
     /*!
      * Add extra amount of material to be primed after an unretraction.

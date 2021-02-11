@@ -41,15 +41,15 @@ public:
     //Polygons inner_infill; //!< The inner infill of the skin with which the area within the innermost inset is filled
     //Polygons roofing_fill; //!< The inner infill which has air directly above
 
-	Polygons roof_outline;
-	Polygons skin_outline;
-	Polygons floor_outline;
-	std::vector<Polygons> roof_insets;
-	std::vector<Polygons> skin_insets;
-	std::vector<Polygons> floor_insets;
-	Polygons roof_inner_infill;
-	Polygons skin_inner_infill;
-	Polygons floor_inner_infill;
+    Polygons roof_outline;
+    Polygons skin_outline;
+    Polygons floor_outline;
+    std::vector<Polygons> roof_insets;
+    std::vector<Polygons> skin_insets;
+    std::vector<Polygons> floor_insets;
+    Polygons roof_inner_infill;
+    Polygons skin_inner_infill;
+    Polygons floor_inner_infill;
 };
 
 
@@ -147,8 +147,6 @@ public:
      * \return the own infill area
      */
     const Polygons& getOwnInfillArea() const;
-
-    std::vector<std::pair<Polygons, double>> spaghetti_infill_volumes; //!< For each filling volume on this layer, the area within which to fill and the total volume (in mm3) to fill over the area
 };
 
 /*!
@@ -233,6 +231,11 @@ public:
 
     int layer_nr_max_filled_layer; //!< the layer number of the uppermost layer with content
 
+    std::vector<AngleDegrees> support_infill_angles; //!< a list of angle values which is cycled through to determine the infill angle of each layer
+    std::vector<AngleDegrees> support_infill_angles_layer_0; //!< a list of angle values which is cycled through to determine the infill angle of each layer
+    std::vector<AngleDegrees> support_roof_angles; //!< a list of angle values which is cycled through to determine the infill angle of each layer
+    std::vector<AngleDegrees> support_bottom_angles; //!< a list of angle values which is cycled through to determine the infill angle of each layer
+
     std::vector<SupportLayer> supportLayers;
     SierpinskiFillProvider* cross_fill_provider; //!< the fractal pattern for the cross (3d) filling pattern
 
@@ -255,7 +258,7 @@ public:
     std::vector<AngleDegrees> infill_angles; //!< a list of angle values which is cycled through to determine the infill angle of each layer
     std::vector<AngleDegrees> roofing_angles; //!< a list of angle values which is cycled through to determine the roofing angle of each layer
     std::vector<AngleDegrees> skin_angles; //!< a list of angle values which is cycled through to determine the skin angle of each layer
-	std::vector<AngleDegrees> flooring_angles; //!< a list of angle values which is cycled through to determine the flooring angle of each layer
+    std::vector<AngleDegrees> flooring_angles; //!< a list of angle values which is cycled through to determine the flooring angle of each layer
     std::vector<Polygons> overhang_areas; //!< For each layer the areas that are classified as overhang on this mesh.
     std::vector<Polygons> full_overhang_areas; //!< For each layer the full overhang without the tangent of the overhang angle removed, such that the overhang area adjoins the areas of the next layers.
     std::vector<Polygons> unsupported_areas; //!< For each layer the totaly unsupported areas
@@ -320,6 +323,7 @@ public:
     SupportStorage support;
 
     Polygons skirt_brim[MAX_EXTRUDERS]; //!< Skirt and brim polygons per extruder, ordered from inner to outer polygons.
+    size_t skirt_brim_max_locked_part_order[MAX_EXTRUDERS]; //!< Some parts (like skirt) always need to be printed before parts like support-brim, so lock 0..n for each extruder, where n is the value saved in this array.
     Polygons raftOutline;               //Storage for the outline of the raft. Will be filled with lines when the GCode is generated.
 
     int max_print_height_second_to_last_extruder; //!< Used in multi-extrusion: the layer number beyond which all models are printed with the same extruder
@@ -353,8 +357,9 @@ public:
      * \param include_prime_tower Whether to include the prime tower in the
      * outline.
      * \param external_polys_only Whether to disregard all hole polygons.
+     * \param for_brim Whether the outline is to be used to construct the brim.
      */
-    Polygons getLayerOutlines(const LayerIndex layer_nr, const bool include_support, const bool include_prime_tower, const bool external_polys_only = false) const;
+    Polygons getLayerOutlines(const LayerIndex layer_nr, const bool include_support, const bool include_prime_tower, const bool external_polys_only = false, const bool for_brim = false) const;
 
     /*!
      * Get the extruders used.

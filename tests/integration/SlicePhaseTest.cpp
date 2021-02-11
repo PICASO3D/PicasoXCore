@@ -1,4 +1,4 @@
-//Copyright (c) 2019 Ultimaker B.V.
+//Copyright (c) 2020 Ultimaker B.V.
 //Copyright (c) 2020 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -7,7 +7,7 @@
 #include "../src/Application.h" //To set up a slice with settings.
 #include "../src/Slice.h" //To set up a scene to slice.
 #include "../src/slicer.h" //Starts the slicing phase that we want to test.
-#include "../src/utils/floatpoint.h" //For FMatrix3x3 to load STL files.
+#include "../src/utils/FMatrix4x3.h" //To load STL files.
 #include "../src/utils/polygon.h" //Creating polygons to compare to sliced layers.
 #include "../src/utils/polygonUtils.h" //Comparing similarity of polygons.
 
@@ -40,6 +40,10 @@ class SlicePhaseTest : public testing::Test
         scene.settings.add("meshfix_maximum_deviation", "0.02");
         scene.settings.add("xy_offset", "0");
         scene.settings.add("xy_offset_layer_0", "0");
+        scene.settings.add("support_mesh", "false");
+        scene.settings.add("anti_overhang_mesh", "false");
+        scene.settings.add("cutting_mesh", "false");
+        scene.settings.add("infill_mesh", "false");
     }
 };
 
@@ -48,7 +52,7 @@ TEST_F(SlicePhaseTest, Cube)
     Scene& scene = Application::getInstance().current_slice->scene;
     MeshGroup& mesh_group = scene.mesh_groups.back();
 
-    const FMatrix3x3 transformation;
+    const FMatrix4x3 transformation;
     //Path to cube.stl is relative to CMAKE_CURRENT_SOURCE_DIR/tests.
     ASSERT_TRUE(loadMeshIntoMeshGroup(&mesh_group, "integration/resources/cube.stl", transformation, scene.settings));
     EXPECT_EQ(mesh_group.meshes.size(), 1);
@@ -108,7 +112,7 @@ TEST_F(SlicePhaseTest, Cylinder1000)
     Scene& scene = Application::getInstance().current_slice->scene;
     MeshGroup& mesh_group = scene.mesh_groups.back();
 
-    const FMatrix3x3 transformation;
+    const FMatrix4x3 transformation;
     //Path to cylinder1000.stl is relative to CMAKE_CURRENT_SOURCE_DIR/tests.
     ASSERT_TRUE(loadMeshIntoMeshGroup(&mesh_group, "integration/resources/cylinder1000.stl", transformation, scene.settings));
     EXPECT_EQ(mesh_group.meshes.size(), 1);

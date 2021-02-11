@@ -1,4 +1,4 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2020 Ultimaker B.V.
 //Copyright (c) 2020 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -20,7 +20,7 @@
 #include "../FffProcessor.h" //To start a slice and get time estimates.
 #include "../Slice.h"
 #include "../utils/getpath.h"
-#include "../utils/floatpoint.h"
+#include "../utils/FMatrix4x3.h" //For the mesh_rotation_matrix setting.
 #include "../utils/logoutput.h"
 
 namespace cura
@@ -105,7 +105,7 @@ void CommandLine::sliceNext()
 
     slice.scene.extruders.reserve(arguments.size() >> 1); //Allocate enough memory to prevent moves.
     slice.scene.extruders.emplace_back(0, &slice.scene.settings); //Always have one extruder.
-    ExtruderTrain& last_extruder = slice.scene.extruders[0];
+    ExtruderTrain* last_extruder = &slice.scene.extruders[0];
 
     for (size_t argument_index = 2; argument_index < arguments.size(); argument_index++)
     {
@@ -186,6 +186,11 @@ void CommandLine::sliceNext()
                                 slice.scene.extruders.emplace_back(slice.scene.extruders.size(), &slice.scene.settings);
                             }
                         }
+                        //If this was an extruder stack, make sure that the extruder_nr setting is correct.
+                        if (last_settings == &last_extruder->settings)
+                        {
+                            last_extruder->settings.add("extruder_nr", std::to_string(last_extruder->extruder_nr));
+                        }
                         break;
                     }
                     case 'e':
@@ -196,6 +201,8 @@ void CommandLine::sliceNext()
                             slice.scene.extruders.emplace_back(extruder_nr, &slice.scene.settings);
                         }
                         last_settings = &slice.scene.extruders[extruder_nr].settings;
+                        last_settings->add("extruder_nr", argument.substr(2));
+                        last_extruder = &slice.scene.extruders[extruder_nr];
                         break;
                     }
                     case 'l':
@@ -208,9 +215,9 @@ void CommandLine::sliceNext()
                         }
                         argument = arguments[argument_index];
 
-                        const FMatrix3x3 transformation = last_settings->get<FMatrix3x3>("mesh_rotation_matrix"); //The transformation applied to the model when loaded.
+                        const FMatrix4x3 transformation = last_settings->get<FMatrix4x3>("mesh_rotation_matrix"); //The transformation applied to the model when loaded.
 
-                        if (!loadMeshIntoMeshGroup(&slice.scene.mesh_groups[mesh_group_index], argument.c_str(), transformation, last_extruder.settings))
+                        if (!loadMeshIntoMeshGroup(&slice.scene.mesh_groups[mesh_group_index], argument.c_str(), transformation, last_extruder->settings))
                         {
                             logError("Failed to load model: %s. (error number %d)\n", argument.c_str(), errno);
                             exit(1);
@@ -350,7 +357,7 @@ std::unordered_set<std::string> CommandLine::defaultSearchDirectories()
 #else
         char delims[] = ";"; //Semicolon for Windows.
 #endif
-        char paths[32 * 1024]; //Maximum length of environment variable.
+        char paths[128 * 1024]; //Maximum length of environment variable.
         strcpy(paths, search_path_env); //Necessary because strtok actually modifies the original string, and we don't want to modify the environment variable itself.
         char* path = strtok(paths, delims);
         while (path != nullptr)

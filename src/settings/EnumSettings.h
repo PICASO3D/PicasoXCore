@@ -28,9 +28,9 @@ enum class EFillMethod
     CROSS,
     CROSS_3D,
     GYROID,
-	HONEYCOMB_FULL,
-	HONEYCOMB_SIMPLE,
-    NONE
+    HONEYCOMB_FULL,
+    HONEYCOMB_SIMPLE,
+    NONE  // NOTE: Should remain last! (May be used in testing to enumarate the enum.)
 };
 
 /*!
@@ -54,6 +54,15 @@ enum class ESupportType
     EVERYWHERE
 };
 
+/*!
+ * Structure of the support, such as Tree Support
+ */
+enum class ESupportStructure
+{
+    NORMAL,
+    TREE
+};
+
 enum class EZSeamType
 {
     RANDOM,
@@ -64,8 +73,8 @@ enum class EZSeamType
 
 enum class EZSeamUserSpecifiedMode
 {
-	NONE,
-	BB_ANGLED
+    NONE,
+    BB_ANGLED
 };
 
 enum class EZSeamCornerPrefType
@@ -75,15 +84,15 @@ enum class EZSeamCornerPrefType
     Z_SEAM_CORNER_PREF_OUTER,
     Z_SEAM_CORNER_PREF_ANY,
     Z_SEAM_CORNER_PREF_WEIGHTED,
-	Z_SEAM_CORNER_PREF_SMOOTH
+    Z_SEAM_CORNER_PREF_SMOOTH
 };
 
 enum class EZSeamCross
 {
-	NONE,
-	NORMAL,
-	HALF,
-	QUARTER
+    NONE,
+    NORMAL,
+    HALF,
+    QUARTER
 };
 
 enum class ESurfaceMode

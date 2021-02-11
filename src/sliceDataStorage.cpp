@@ -139,12 +139,14 @@ Polygons& SliceLayer::getInnermostWalls(const size_t max_inset, const SliceMeshS
             {
                 // there are some regions where the 2nd wall is missing so we must merge the 2nd wall outline
                 // with the portions of outer we just calculated
-
-                result.add(part.insets[1].offset(half_line_width_x).unionPolygons(outer_where_there_are_no_inner_insets.offset(half_line_width_0 + 15)).offset(-std::min(half_line_width_0, half_line_width_x)));
+                // NOTE - expanding the 2nd wall by an extra factor of 2 is needed to successfully merge tiny 2nd wall outlines with sharp corners into the outer wall
+                // the effect of the extra expansion is that the boundary will hug the outline of the 2nd wall regions rather than its centre line
+                result.add(part.insets[1].offset(2*half_line_width_x).unionPolygons(outer_where_there_are_no_inner_insets.offset(half_line_width_0))
+                    .offset(-std::min(half_line_width_0, half_line_width_x)).intersection(outer));
             }
             else
             {
-                // the 2nd wall is complete so use it verbatim
+                // the 2nd wall is complete so use its centre line
                 result.add(part.insets[1]);
             }
         }
@@ -453,9 +455,11 @@ SliceDataStorage::SliceDataStorage()
     }
     machine_size.include(machine_min);
     machine_size.include(machine_max);
+
+    std::fill(skirt_brim_max_locked_part_order, skirt_brim_max_locked_part_order + MAX_EXTRUDERS, 0);
 }
 
-Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const bool include_support, const bool include_prime_tower, const bool external_polys_only) const
+Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const bool include_support, const bool include_prime_tower, const bool external_polys_only, const bool for_brim) const
 {
     if (layer_nr < 0 && layer_nr < -static_cast<LayerIndex>(Raft::getFillerLayerCount()))
     { // when processing raft
@@ -495,7 +499,14 @@ Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const boo
                     continue;
                 }
                 const SliceLayer& layer = mesh.layers[layer_nr];
-                layer.getOutlines(total, external_polys_only);
+                if (for_brim)
+                {
+                    total.add(layer.getOutlines(external_polys_only).offset(mesh.settings.get<coord_t>("brim_gap")));
+                }
+                else
+                {
+                    layer.getOutlines(total, external_polys_only);
+                }
                 if (mesh.settings.get<ESurfaceMode>("magic_mesh_surface_mode") != ESurfaceMode::NORMAL)
                 {
                     total = total.unionPolygons(layer.openPolyLines.offsetPolyLine(100));
@@ -558,7 +569,7 @@ std::vector<bool> SliceDataStorage::getExtrudersUsed() const
     // support is presupposed to be present...
     for (const SliceMeshStorage& mesh : meshes)
     {
-        if (mesh.settings.get<bool>("support_enable") || mesh.settings.get<bool>("support_tree_enable") || mesh.settings.get<bool>("support_mesh"))
+        if (mesh.settings.get<bool>("support_enable") || mesh.settings.get<bool>("support_mesh"))
         {
             ret[mesh_group_settings.get<ExtruderTrain&>("support_extruder_nr_layer_0").extruder_nr] = true;
             ret[mesh_group_settings.get<ExtruderTrain&>("support_infill_extruder_nr").extruder_nr] = true;

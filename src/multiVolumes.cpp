@@ -2,8 +2,11 @@
 //Copyright (c) 2020 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "Application.h"
 #include "multiVolumes.h"
+
+#include <algorithm>
+
+#include "Application.h"
 #include "Slice.h"
 #include "slicer.h"
 #include "settings/EnumSettings.h"
@@ -15,9 +18,15 @@ void carveMultipleVolumes(std::vector<Slicer*> &volumes)
 {
     //Go trough all the volumes, and remove the previous volume outlines from our own outline, so we never have overlapped areas.
     const bool alternate_carve_order = Application::getInstance().current_slice->scene.current_mesh_group->settings.get<bool>("alternate_carve_order");
+    std::vector<Slicer*> ranked_volumes = volumes;
+    std::sort(ranked_volumes.begin(), ranked_volumes.end(),
+              [](Slicer* volume_1, Slicer* volume_2)
+                {
+                    return volume_1->mesh->settings.get<int>("infill_mesh_order") < volume_2->mesh->settings.get<int>("infill_mesh_order");
+                } );
     for (unsigned int volume_1_idx = 1; volume_1_idx < volumes.size(); volume_1_idx++)
     {
-        Slicer& volume_1 = *volumes[volume_1_idx];
+        Slicer& volume_1 = *ranked_volumes[volume_1_idx];
         if (volume_1.mesh->settings.get<bool>("infill_mesh") 
             || volume_1.mesh->settings.get<bool>("anti_overhang_mesh")
             || volume_1.mesh->settings.get<bool>("support_mesh")
@@ -28,7 +37,7 @@ void carveMultipleVolumes(std::vector<Slicer*> &volumes)
         }
         for (unsigned int volume_2_idx = 0; volume_2_idx < volume_1_idx; volume_2_idx++)
         {
-            Slicer& volume_2 = *volumes[volume_2_idx];
+            Slicer& volume_2 = *ranked_volumes[volume_2_idx];
             if (volume_2.mesh->settings.get<bool>("infill_mesh")
                 || volume_2.mesh->settings.get<bool>("anti_overhang_mesh")
                 || volume_2.mesh->settings.get<bool>("support_mesh")
@@ -45,7 +54,7 @@ void carveMultipleVolumes(std::vector<Slicer*> &volumes)
             {
                 SlicerLayer& layer1 = volume_1.layers[layerNr];
                 SlicerLayer& layer2 = volume_2.layers[layerNr];
-                if (alternate_carve_order && layerNr % 2 == 0)
+                if (alternate_carve_order && layerNr % 2 == 0 && volume_1.mesh->settings.get<int>("infill_mesh_order") == volume_2.mesh->settings.get<int>("infill_mesh_order"))
                 {
                     layer2.polygons = layer2.polygons.difference(layer1.polygons);
                 }

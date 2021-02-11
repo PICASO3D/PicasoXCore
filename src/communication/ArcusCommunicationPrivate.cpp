@@ -1,4 +1,4 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2020 Ultimaker B.V.
 //Copyright (c) 2020 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -9,7 +9,8 @@
 #include "../ExtruderTrain.h"
 #include "../Slice.h"
 #include "../settings/types/LayerIndex.h"
-#include "../utils/floatpoint.h"
+#include "../utils/floatpoint.h" //To accept vertices (which are provided in floating point).
+#include "../utils/FMatrix4x3.h" //To convert vertices to integer-points.
 #include "../utils/logoutput.h"
 
 namespace cura
@@ -94,7 +95,7 @@ void ArcusCommunication::Private::readMeshGroupMessage(const proto::ObjectList& 
         mesh_group.settings.add(setting.name(), setting.value());
     }
 
-    FMatrix3x3 matrix;
+    FMatrix4x3 matrix;
     for (const cura::proto::Object& object : mesh_group_message.objects())
     {
         const size_t bytes_per_face = sizeof(FPoint3) * 3; //3 vectors per face.
@@ -122,22 +123,22 @@ void ArcusCommunication::Private::readMeshGroupMessage(const proto::ObjectList& 
         {
             logWarning("Quaternion Mode\n");
             const FQuaternion quaternion = mesh.settings.get<FQuaternion>("mesh_quaternion_matrix");
-			const float stl_offset_x = (float)mesh.settings.get<double>("stl_offset_x");
-			const float stl_offset_y = (float)mesh.settings.get<double>("stl_offset_y");
-			const float stl_offset_z = (float)mesh.settings.get<double>("stl_offset_z");
-			FPoint3 stl_offset = FPoint3(stl_offset_x, stl_offset_y, stl_offset_z);
+            const float stl_offset_x = (float)mesh.settings.get<double>("stl_offset_x");
+            const float stl_offset_y = (float)mesh.settings.get<double>("stl_offset_y");
+            const float stl_offset_z = (float)mesh.settings.get<double>("stl_offset_z");
+            FPoint3 stl_offset = FPoint3(stl_offset_x, stl_offset_y, stl_offset_z);
 
-			for (size_t face = 0; face < face_count; face++)
-			{
-				const std::string data = object.vertices().substr(face * bytes_per_face, bytes_per_face);
-				const FPoint3* float_vertices = reinterpret_cast<const FPoint3*>(data.data());
+            for (size_t face = 0; face < face_count; face++)
+            {
+                const std::string data = object.vertices().substr(face * bytes_per_face, bytes_per_face);
+                const FPoint3* float_vertices = reinterpret_cast<const FPoint3*>(data.data());
 
-				Point3 verts[3];
-				verts[0] = quaternion.apply(float_vertices[0] - stl_offset);
-				verts[1] = quaternion.apply(float_vertices[1] - stl_offset);
-				verts[2] = quaternion.apply(float_vertices[2] - stl_offset);
-				mesh.addFace(verts[0], verts[1], verts[2]);
-			}
+                Point3 verts[3];
+                verts[0] = quaternion.apply(float_vertices[0] - stl_offset);
+                verts[1] = quaternion.apply(float_vertices[1] - stl_offset);
+                verts[2] = quaternion.apply(float_vertices[2] - stl_offset);
+                mesh.addFace(verts[0], verts[1], verts[2]);
+            }
         }
         else
         {

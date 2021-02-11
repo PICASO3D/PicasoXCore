@@ -21,7 +21,7 @@ bool ConstPolygonRef::empty() const
     return path->empty();
 }
 
-bool ConstPolygonRef::shorterThan(int64_t check_length) const
+bool ConstPolygonRef::shorterThan(const coord_t check_length) const
 {
     const ConstPolygonRef& polygon = *this;
     const Point* p0 = &polygon.back();
@@ -90,7 +90,7 @@ Polygons Polygons::approxConvexHull(int extra_outset)
     //Perform the offset for each polygon one at a time.
     //This is necessary because the polygons may overlap, in which case the offset could end up in an infinite loop.
     //See http://www.angusj.com/delphi/clipper/documentation/Docs/Units/ClipperLib/Classes/ClipperOffset/_Body.htm
-    for (const ClipperLib::Path path : paths)
+    for (const ClipperLib::Path& path : paths)
     {
         Polygons offset_result;
         ClipperLib::ClipperOffset offsetter(1.2, 10.0);
@@ -296,6 +296,9 @@ Polygons ConstPolygonRef::offset(int distance, ClipperLib::JoinType join_type, d
     return ret;
 }
 
+
+
+
 void PolygonRef::simplify(const coord_t smallest_line_segment_squared, const coord_t allowed_error_distance_squared)
 {
     if (size() < 3)
@@ -309,22 +312,30 @@ void PolygonRef::simplify(const coord_t smallest_line_segment_squared, const coo
     }
 
     ClipperLib::Path new_path;
-    Point previous = path->at(0);
-    Point current = path->at(1);
-    /* When removing a vertex, we'll check if the delta area of the polygon
-     * remains below allowed_error_distance_squared. However when removing
-     * multiple consecutive vertices, each individual vertex may result in a
-     * delta area below the threshold, while the total effect of removing all of
-     * those vertices results in too much area being removed. So we accumulate
-     * the area that is going to be removed by a streak of consecutive vertices
-     * and don't allow that to exceed allowed_error_distance_squared. */
-    coord_t accumulated_area_removed = previous.X * current.Y - previous.Y * current.X; //Shoelace formula for area of polygon per line segment.
+    Point previous = path->back();
+    Point previous_previous = path->at(path->size() - 2);
+    Point current = path->at(0);
 
-    for (size_t point_idx = 1; point_idx <= size(); point_idx++)
+    /* When removing a vertex, we check the height of the triangle of the area
+     being removed from the original polygon by the simplification. However,
+     when consecutively removing multiple vertices the height of the previously
+     removed vertices w.r.t. the shortcut path changes.
+     In order to not recompute the new height value of previously removed
+     vertices we compute the height of a representative triangle, which covers
+     the same amount of area as the area being cut off. We use the Shoelace
+     formula to accumulate the area under the removed segments. This works by
+     computing the area in a 'fan' where each of the blades of the fan go from
+     the origin to one of the segments. While removing vertices the area in
+     this fan accumulates. By subtracting the area of the blade connected to
+     the short-cutting segment we obtain the total area of the cutoff region.
+     From this area we compute the height of the representative triangle using
+     the standard formula for a triangle area: A = .5*b*h
+     */
+    coord_t accumulated_area_removed = previous.X * current.Y - previous.Y * current.X; // Twice the Shoelace formula for area of polygon per line segment.
+
+    for (size_t point_idx = 0; point_idx < size(); point_idx++)
     {
         current = path->at(point_idx % size());
-
-        const coord_t length2 = vSize2(current - previous);
 
         //Check if the accumulated area doesn't exceed the maximum.
         Point next;
@@ -332,63 +343,88 @@ void PolygonRef::simplify(const coord_t smallest_line_segment_squared, const coo
         {
             next = path->at(point_idx + 1);
         }
-        else if (!new_path.empty())
-        {
+        else if (point_idx + 1 == size() && new_path.size() > 1)
+        { // don't spill over if the [next] vertex will then be equal to [previous]
             next = new_path[0]; //Spill over to new polygon for checking removed area.
         }
         else
         {
-            break; //New polygon also doesn't have any vertices yet, meaning we've completed the loop without adding any vertices. The entire polygon is too small to be significant.
+            next = path->at((point_idx + 1) % size());
         }
-        accumulated_area_removed += current.X * next.Y - current.Y * next.X; //Shoelace formula for area of polygon per line segment.
+        const coord_t removed_area_next = current.X * next.Y - current.Y * next.X; // Twice the Shoelace formula for area of polygon per line segment.
+        const coord_t negative_area_closing = next.X * previous.Y - next.Y * previous.X; // area between the origin and the short-cutting segment
+        accumulated_area_removed += removed_area_next;
 
-        const coord_t area_removed_so_far = accumulated_area_removed + next.X * previous.Y - next.Y * previous.X; //Close the polygon.
+        const coord_t length2 = vSize2(current - previous);
+        if (length2 < 25)
+        {
+            // We're allowed to always delete segments of less than 5 micron.
+            continue;
+        }
+
+        const coord_t area_removed_so_far = accumulated_area_removed + negative_area_closing; // close the shortcut area polygon
         const coord_t base_length_2 = vSize2(next - previous);
+
         if (base_length_2 == 0) //Two line segments form a line back and forth with no area.
         {
             continue; //Remove the vertex.
         }
         //We want to check if the height of the triangle formed by previous, current and next vertices is less than allowed_error_distance_squared.
+        //1/2 L = A           [actual area is half of the computed shoelace value] // Shoelace formula is .5*(...) , but we simplify the computation and take out the .5
         //A = 1/2 * b * h     [triangle area formula]
-        //2A = b * h          [multiply by 2]
-        //h = 2A / b          [divide by b]
-        //h^2 = (2A / b)^2    [square it]
-        //h^2 = (2A)^2 / b^2  [factor the divisor]
-        //h^2 = 4A^2 / b^2    [remove brackets of (2A)^2]
-        const coord_t height_2 = (4 * area_removed_so_far * area_removed_so_far) / base_length_2;
-        if (length2 < smallest_line_segment_squared && height_2 <= allowed_error_distance_squared) //Line is small and removing it doesn't introduce too much error.
+        //L = b * h           [apply above two and take out the 1/2]
+        //h = L / b           [divide by b]
+        //h^2 = (L / b)^2     [square it]
+        //h^2 = L^2 / b^2     [factor the divisor]
+        const coord_t height_2 = area_removed_so_far * area_removed_so_far / base_length_2;
+        if ((height_2 <= 1 //Almost exactly colinear (barring rounding errors).
+            && LinearAlg2D::getDistFromLine(current, previous, next) <= 1)) // make sure that height_2 is not small because of cancellation of positive and negative areas
         {
-            continue; //Remove the vertex.
+            continue;
         }
-        else if (length2 >= smallest_line_segment_squared && new_path.size() > 2 &&
-                (vSize2(new_path[new_path.size() - 2] - new_path.back()) == 0 || LinearAlg2D::getDist2FromLine(current, new_path[new_path.size() - 2], new_path.back()) <= 25)) //Almost exactly straight (barring rounding errors).
+
+        if (length2 < smallest_line_segment_squared
+            && height_2 <= allowed_error_distance_squared) // removing the vertex doesn't introduce too much error.)
         {
-            new_path.pop_back(); //Remove the previous vertex but still add the new one.
+            const coord_t next_length2 = vSize2(current - next);
+            if (next_length2 > smallest_line_segment_squared)
+            {
+                // Special case; The next line is long. If we were to remove this, it could happen that we get quite noticeable artifacts.
+                // We should instead move this point to a location where both edges are kept and then remove the previous point that we wanted to keep.
+                // By taking the intersection of these two lines, we get a point that preserves the direction (so it makes the corner a bit more pointy).
+                // We just need to be sure that the intersection point does not introduce an artifact itself.
+                Point intersection_point;
+                bool has_intersection = LinearAlg2D::lineLineIntersection(previous_previous, previous, current, next, intersection_point);
+                if (!has_intersection
+                    || LinearAlg2D::getDist2FromLine(intersection_point, previous, current) > allowed_error_distance_squared
+                    || vSize2(intersection_point - previous) > smallest_line_segment_squared  // The intersection point is way too far from the 'previous'
+                    || vSize2(intersection_point - next) > smallest_line_segment_squared)     // and 'next' points, so it shouldn't replace 'current'
+                {
+                    // We can't find a better spot for it, but the size of the line is more than 5 micron.
+                    // So the only thing we can do here is leave it in...
+                }
+                else
+                {
+                    // New point seems like a valid one.
+                    current = intersection_point;
+                    // If there was a previous point added, remove it.
+                    if(!new_path.empty())
+                    {
+                        new_path.pop_back();
+                        previous = previous_previous;
+                    }
+                }
+            }
+            else
+            {
+                continue; //Remove the vertex.
+            }
         }
         //Don't remove the vertex.
-
-        accumulated_area_removed = current.X * next.Y - current.Y * next.X;
+        accumulated_area_removed = removed_area_next; // so that in the next iteration it's the area between the origin, [previous] and [current]
+        previous_previous = previous;
         previous = current; //Note that "previous" is only updated if we don't remove the vertex.
         new_path.push_back(current);
-    }
-
-    //For the last/first vertex, we didn't check the connection that closes the polygon yet. Add the first vertex back if this connection is too long, or remove it if it's too short.
-    if(!new_path.empty() && vSize2(new_path.back() - new_path[0]) > smallest_line_segment_squared
-        && vSize2(new_path.back() - path->at(0)) >= smallest_line_segment_squared
-        && vSize2(new_path[0] - path->at(0)) >= smallest_line_segment_squared)
-    {
-        new_path.push_back(path->at(0));
-    }
-    if(new_path.size() > 2 && (vSize2(new_path.back() - new_path[0]) < smallest_line_segment_squared || vSize2(new_path.back() - new_path[new_path.size() - 2]) < smallest_line_segment_squared))
-    {
-        if (LinearAlg2D::getDist2FromLine(new_path.back(), new_path[new_path.size() - 2], new_path[0]) < allowed_error_distance_squared)
-        {
-            new_path.pop_back();
-        }
-    }
-    if(new_path.size() > 2 && LinearAlg2D::getDist2FromLine(new_path[0], new_path.back(), new_path[1]) <= 25)
-    {
-        new_path.erase(new_path.begin());
     }
 
     *path = new_path;
@@ -475,6 +511,59 @@ void Polygons::removeEmptyHoles_processPolyTreeNode(const ClipperLib::PolyNode& 
     }
 }
 
+void Polygons::removeSmallAreas(const double min_area_size, const bool remove_holes)
+{
+    std::vector<ConstPolygonRef> outlines_removed;
+    std::vector<size_t> small_hole_indices;
+    Polygons& thiss = *this;
+    for(size_t i = 0; i < size(); i++)
+    {
+        double area = INT2MM(INT2MM(thiss[i].area()));
+        // holes have negative area and small holes will be ignored unless remove_holes is true
+        // or the hole is contained within an outline that is itself smaller in area than the threshold
+        if (fabs(area) < min_area_size)
+        {
+            if (!remove_holes)
+            {
+                if (area > 0)
+                {
+                    // remember this outline has been removed so we can later check if it contains any holes that also need to be removed
+                    outlines_removed.push_back(thiss[i]);
+                }
+                else
+                {
+                    // remember this small hole so we can later check if it is contained within an outline that has been removed
+                    small_hole_indices.push_back(i);
+                }
+            }
+            // the polygon area is below the threshold, remove it if it is an outline or we are removing holes as well as outlines
+            if (area > 0 || remove_holes)
+            {
+                remove(i);
+                i -= 1;
+            }
+        }
+    }
+    if (outlines_removed.size() > 0 && small_hole_indices.size() > 0)
+    {
+        size_t num_holes_removed = 0;
+        // now remove any holes that are inside outlines that have been removed
+        for (size_t small_hole_index : small_hole_indices)
+        {
+            const size_t hole_index = small_hole_index - num_holes_removed; // adjust index to account for removed holes
+            // if hole polygon's first point is inside a removed polygon, remove the hole polygon also
+            for (ConstPolygonRef removed_outline : outlines_removed)
+            {
+                if (removed_outline.inside(thiss[hole_index][0]))
+                {
+                    remove(hole_index);
+                    ++num_holes_removed;
+                    break;
+                }
+            }
+        }
+    }
+}
 
 Polygons Polygons::toPolygons(ClipperLib::PolyTree& poly_tree)
 {
@@ -1130,6 +1219,11 @@ void Polygons::splitIntoParts_processPolyTreeNode(ClipperLib::PolyNode* node, st
         }
         ret.push_back(part);
     }
+}
+
+Polygons Polygons::tubeShape(const coord_t inner_offset, const coord_t outer_offset) const
+{
+    return this->offset(outer_offset).difference(this->offset(-inner_offset));
 }
 
 unsigned int PartsView::getPartContaining(unsigned int poly_idx, unsigned int* boundary_poly_idx) const

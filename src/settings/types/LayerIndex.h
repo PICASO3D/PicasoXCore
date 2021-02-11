@@ -1,4 +1,4 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2019 Ultimaker B.V.
 //Copyright (c) 2020 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -21,17 +21,17 @@ struct LayerIndex
     /*
      * \brief Default constructor setting the layer index to 0.
      */
-    LayerIndex() : value(0) {};
+    constexpr LayerIndex() : value(0) {};
 
     /*
      * \brief Casts an integer to a LayerIndex instance.
      */
-    LayerIndex(int value) : value(value) {};
+    constexpr LayerIndex(int value) : value(value) {};
 
     /*
      * \brief Casts the LayerIndex instance to an integer.
      */
-    operator int() const
+    constexpr operator int() const
     {
         return value;
     }
@@ -90,7 +90,7 @@ struct LayerIndex
         operator++(); //Increment myself.
         return original_value;
     }
-    LayerIndex operator --()
+    LayerIndex& operator --()
     {
         value--;
         return *this;

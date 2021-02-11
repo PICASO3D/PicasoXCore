@@ -1,12 +1,11 @@
-#Copyright (c) 2019 Ultimaker B.V.
+#Copyright (c) 2020 Ultimaker B.V.
 #Copyright (c) 2020 PICASO 3D
 #PicasoXCore is released under the terms of the AGPLv3 or higher
 
+cmake_minimum_required(VERSION 3.6.0)
 project(PicasoXCore)
 
-cmake_minimum_required(VERSION 3.6.0)
-
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(ENABLE_ARCUS "Enable support for ARCUS" ON)
 
@@ -19,7 +18,7 @@ if(ENABLE_ARCUS)
     # We want to have access to protobuf_generate_cpp and other FindProtobuf features.
     # However, if ProtobufConfig is used instead, there is a CMake option that controls
     # this, which defaults to OFF. We need to force this option to ON instead.
-    set(protobuf_MODULE_COMPATIBLE ON CACHE "" INTERNAL FORCE)
+    set(protobuf_MODULE_COMPATIBLE ON CACHE INTERNAL "" FORCE)
     find_package(Protobuf 3.0.0 REQUIRED)
     find_package(Arcus REQUIRED)
     add_definitions(-DARCUS)
@@ -41,9 +40,9 @@ if(CMAKE_BUILD_TYPE)
 endif()
 
 if(CMAKE_BUILD_TYPE_UPPER MATCHES "DEBUG")
-    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_DEBUG_INIT})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG_INIT}")
 else()
-    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_RELEASE_INIT})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE_INIT}")
 endif()
 
 set(CMAKE_CXX_STANDARD 11)
@@ -65,7 +64,7 @@ option(BUILD_TESTS OFF)
 if(CMAKE_BUILD_TYPE_UPPER MATCHES "DEBUG" OR CMAKE_BUILD_TYPE_UPPER MATCHES "RELWITHDEBINFO")
     message(STATUS "Building debug release of PicasoXCore.")
     if (NOT MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra -O0 -g -fno-omit-frame-pointer")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra -O0 -g -fno-omit-frame-pointer")
     endif()
     add_definitions(-DASSERT_INSANE_OUTPUT)
     add_definitions(-DUSE_CPU_TIME)
@@ -75,17 +74,17 @@ endif()
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /permissive- /Zc:twoPhase- /EHsc /W3")
     if (MSVC_STATIC_RUNTIME)
-        foreach(flag_var
-            CMAKE_CXX_FLAGS
-            CMAKE_CXX_FLAGS_DEBUG
-            CMAKE_CXX_FLAGS_RELEASE
-            CMAKE_CXX_FLAGS_MINSIZEREL
-            CMAKE_CXX_FLAGS_RELWITHDEBINFO
-            )
-            if(${flag_var} MATCHES "/MD")
-                string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
-            endif()
-        endforeach()
+	foreach(flag_var
+	    CMAKE_CXX_FLAGS
+	    CMAKE_CXX_FLAGS_DEBUG
+	    CMAKE_CXX_FLAGS_RELEASE
+	    CMAKE_CXX_FLAGS_MINSIZEREL
+	    CMAKE_CXX_FLAGS_RELWITHDEBINFO
+	    )
+	    if(${flag_var} MATCHES "/MD")
+		string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+	    endif()
+	endforeach()
     endif()
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall") # Add warnings
@@ -96,9 +95,9 @@ option (ENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS
 if (ENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS AND NOT (CMAKE_BUILD_TYPE_UPPER MATCHES "DEBUG"))
     message (STATUS "Compile with more optimization flags")
     if (MSVC)
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} /fp:fast")
+	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} /fp:fast")
     else()
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -Ofast -funroll-loops")
+	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -Ofast -funroll-loops")
     endif()
 endif ()
 
@@ -116,14 +115,14 @@ option (ENABLE_OPENMP
 if (ENABLE_OPENMP)
     FIND_PACKAGE( OpenMP )
     if( OPENMP_FOUND )
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}" )
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}" )
     endif()
 endif()
 
 if(USE_SYSTEM_LIBS)
-    include_directories(${Polyclipping_INCLUDE_DIRS} ${CMAKE_BINARY_DIR} ${RAPIDJSON_INCLUDE_DIRS})
+    include_directories(${Polyclipping_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}" ${RAPIDJSON_INCLUDE_DIRS})
 else()
-    include_directories(${CMAKE_CURRENT_BINARY_DIR} libs libs/clipper)
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}" libs libs/clipper)
     add_library(clipper STATIC libs/clipper/clipper.cpp)
 endif()
 
@@ -177,8 +176,6 @@ set(engine_SRCS # Except main.cpp.
     src/infill/ZigzagConnectorProcessor.cpp
     src/infill/SierpinskiFill.cpp
     src/infill/SierpinskiFillProvider.cpp
-    src/infill/SpaghettiInfill.cpp
-    src/infill/SpaghettiInfillPathGenerator.cpp
     src/infill/SubDivCube.cpp
     src/infill/GyroidInfill.cpp
     src/infill/PicasoHoneyCombInfill.cpp
@@ -200,6 +197,7 @@ set(engine_SRCS # Except main.cpp.
     src/utils/AABB.cpp
     src/utils/AABB3D.cpp
     src/utils/Date.cpp
+    src/utils/FMatrix4x3.cpp
     src/utils/gettime.cpp
     src/utils/getpath.cpp
     src/utils/LinearAlg2D.cpp
@@ -221,6 +219,8 @@ set(engine_SRCS # Except main.cpp.
 # List of tests. For each test there must be a file tests/${NAME}.cpp.
 set(engine_TEST
     GCodeExportTest
+    InfillTest
+    LayerPlanTest
     MergeInfillLinesTest
     TimeEstimateCalculatorTest
 )
@@ -234,8 +234,8 @@ set(engine_TEST_SETTINGS
 )
 if (ENABLE_ARCUS)
     set(engine_TEST_ARCUS
-        ArcusCommunicationTest
-        ArcusCommunicationPrivateTest
+	ArcusCommunicationTest
+	ArcusCommunicationPrivateTest
     )
 endif ()
 set(engine_TEST_UTILS
@@ -255,6 +255,9 @@ set(engine_TEST_UTILS
 # Helper classes for some tests.
 set(engine_TEST_ARCUS_HELPERS
     tests/arcus/MockSocket.cpp
+)
+set(engine_TEST_HELPERS
+    tests/ReadTestPolygons.cpp
 )
 
 # Generating ProtoBuf protocol
@@ -287,8 +290,8 @@ if(WIN32)
   if(NOT MSVC)
     SET(CMAKE_RC_COMPILER_INIT windres)
     SET(CMAKE_RC_COMPILE_OBJECT
-        "<CMAKE_RC_COMPILER> <FLAGS> -O coff <DEFINES> -i <SOURCE> -o <OBJECT>"
-        )
+	"<CMAKE_RC_COMPILER> <FLAGS> -O coff <DEFINES> -i <SOURCE> -o <OBJECT>"
+	)
  endif()
 endif(WIN32)
 
@@ -323,49 +326,60 @@ if (BUILD_TESTS)
 
     #To make sure that the tests are built before running them, add the building of these tests as an additional test.
     add_custom_target(build_all_tests)
-    add_test(BuildTests "${CMAKE_COMMAND}" --build ${CMAKE_CURRENT_BINARY_DIR} --target build_all_tests)
+    add_test(BuildTests "${CMAKE_COMMAND}" --build "${CMAKE_CURRENT_BINARY_DIR}" --target build_all_tests)
 
     foreach (test ${engine_TEST})
-        add_executable(${test} tests/main.cpp tests/${test}.cpp)
-        target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	add_executable(${test} tests/main.cpp ${engine_TEST_HELPERS} tests/${test}.cpp)
+	target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
     endforeach()
     foreach (test ${engine_TEST_INFILL})
-        add_executable(${test} tests/main.cpp tests/infill/${test}.cpp)
-        target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	add_executable(${test} tests/main.cpp tests/infill/${test}.cpp)
+	target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
     endforeach()
     foreach (test ${engine_TEST_INTEGRATION})
-        add_executable(${test} tests/main.cpp tests/integration/${test}.cpp)
-        target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	add_executable(${test} tests/main.cpp tests/integration/${test}.cpp)
+	target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
     endforeach()
     foreach (test ${engine_TEST_SETTINGS})
-        add_executable(${test} tests/main.cpp tests/settings/${test}.cpp)
-        target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	add_executable(${test} tests/main.cpp tests/settings/${test}.cpp)
+	target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
     endforeach()
     if (ENABLE_ARCUS)
-        foreach (test ${engine_TEST_ARCUS})
-            add_executable(${test} tests/main.cpp ${engine_TEST_ARCUS_HELPERS} tests/arcus/${test}.cpp)
-            target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-            add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-            add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-        endforeach()
+	foreach (test ${engine_TEST_ARCUS})
+	    add_executable(${test} tests/main.cpp ${engine_TEST_ARCUS_HELPERS} tests/arcus/${test}.cpp)
+	    target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	    add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	    add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	endforeach()
     endif ()
     foreach (test ${engine_TEST_UTILS})
-        add_executable(${test} tests/main.cpp tests/utils/${test}.cpp)
-        target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
+	add_executable(${test} tests/main.cpp tests/utils/${test}.cpp)
+	target_link_libraries(${test} _PicasoXCore ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
+	add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
+	add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
     endforeach()
 endif()
 
 # Installing PicasoXCore.
 include(GNUInstallDirs)
-install(TARGETS PicasoXCore DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS PicasoXCore DESTINATION "${CMAKE_INSTALL_BINDIR}")
+# For MinGW64 cross compiling on Debian, we create a ZIP package instead of a DEB
+# Because it's the Windows build system that should install the files.
+if (CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME MATCHES "Windows")
+    message(STATUS "Include MinGW64 posix DLLs for installation.")
+    install(FILES
+	    /usr/lib/gcc/x86_64-w64-mingw32/8.3-posix/libgcc_s_seh-1.dll
+	    /usr/lib/gcc/x86_64-w64-mingw32/8.3-posix/libgomp-1.dll
+	    /usr/lib/gcc/x86_64-w64-mingw32/8.3-posix/libstdc++-6.dll
+	    DESTINATION bin
+	    COMPONENT runtime)
+endif ()
 include(CPackConfig.cmake)

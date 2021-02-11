@@ -100,7 +100,7 @@ void Infill::_generate(Polygons& result_polygons, Polygons& result_lines, const 
     if (in_outline.empty()) return;
     if (line_distance == 0) return;
 
-    if (zig_zaggify && (pattern == EFillMethod::LINES || pattern == EFillMethod::TRIANGLES || pattern == EFillMethod::GRID || pattern == EFillMethod::CUBIC || pattern == EFillMethod::TETRAHEDRAL || pattern == EFillMethod::QUARTER_CUBIC || pattern == EFillMethod::TRIHEXAGON))
+    if (pattern == EFillMethod::ZIG_ZAG || (zig_zaggify && (pattern == EFillMethod::LINES || pattern == EFillMethod::TRIANGLES || pattern == EFillMethod::GRID || pattern == EFillMethod::CUBIC || pattern == EFillMethod::TETRAHEDRAL || pattern == EFillMethod::QUARTER_CUBIC || pattern == EFillMethod::TRIHEXAGON || pattern == EFillMethod::GYROID)))
     {
         outline_offset -= infill_line_width / 2; // the infill line zig zag connections must lie next to the border, not on it
     }
@@ -154,13 +154,13 @@ void Infill::_generate(Polygons& result_polygons, Polygons& result_lines, const 
     case EFillMethod::GYROID:
         generateGyroidInfill(result_lines);
         break;
-	case EFillMethod::HONEYCOMB_FULL:
-		generateHoneyCombInfill(result_lines, *mesh, false);
-		break;
-	case EFillMethod::HONEYCOMB_SIMPLE:
-		generateHoneyCombInfill(result_lines, *mesh, true);
-		break;
-	default:
+    case EFillMethod::HONEYCOMB_FULL:
+        generateHoneyCombInfill(result_lines, *mesh, false);
+        break;
+    case EFillMethod::HONEYCOMB_SIMPLE:
+        generateHoneyCombInfill(result_lines, *mesh, true);
+        break;
+    default:
         logError("Fill pattern has unknown value.\n");
         break;
     }
@@ -195,9 +195,10 @@ void Infill::multiplyInfill(Polygons& result_polygons, Polygons& result_lines)
 
     const Polygons outline = in_outline.offset(outline_offset);
 
+    // Get the first offset these are mirrored from the original center line
     Polygons result;
     Polygons first_offset;
-    { // calculate [first_offset]
+    {
         const Polygons first_offset_lines = result_lines.offsetPolyLine(offset); // make lines on both sides of the input lines
         const Polygons first_offset_polygons_inward = result_polygons.offset(-offset); // make lines on the inside of the input polygons
         const Polygons first_offset_polygons_outward = result_polygons.offset(offset); // make lines on the other side of the input polygons
@@ -209,19 +210,28 @@ void Infill::multiplyInfill(Polygons& result_polygons, Polygons& result_lines)
         }
     }
     result.add(first_offset);
-    Polygons reference_polygons = first_offset;
-    for (size_t infill_line = 1; infill_line < infill_multiplier / 2; infill_line++) // 2 because we are making lines on both sides at the same time
-    {
-        Polygons extra_offset = reference_polygons.offset(-infill_line_width);
-        result.add(extra_offset);
-        reference_polygons = std::move(extra_offset);
-    }
 
+    // Create the additional offsets from the first offsets, generated earlier, the direction of these offsets is
+    // depended on whether these lines should be connected or not.
+    if (infill_multiplier > 3)
+    {
+        Polygons reference_polygons = first_offset;
+        const size_t multiplier = static_cast<size_t>(infill_multiplier / 2);
+
+        const int extra_offset = mirror_offset ? -infill_line_width : infill_line_width;
+        for (size_t infill_line = 1; infill_line < multiplier; ++infill_line)
+        {
+            Polygons extra_polys = reference_polygons.offset(extra_offset);
+            result.add(extra_polys);
+            reference_polygons = std::move(extra_polys);
+        }
+    }
     if (zig_zaggify)
     {
         result = result.intersection(outline);
     }
 
+    // Remove the original center lines when there are an even number of lines required.
     if (!odd_multiplier)
     {
         result_polygons.clear();
@@ -290,6 +300,7 @@ void Infill::generateConcentricInfill(Polygons& first_concentric_wall, Polygons&
     while (prev_inset->size() > 0)
     {
         new_inset = prev_inset->offset(-inset_value);
+        new_inset.simplify();
         result.add(new_inset);
         if (perimeter_gaps)
         {
@@ -483,7 +494,7 @@ void Infill::generateZigZagInfill(Polygons& result, const coord_t line_distance,
 
     PointMatrix rotation_matrix(infill_rotation);
     ZigzagConnectorProcessor zigzag_processor(rotation_matrix, result, use_endpieces, connected_zigzags, skip_some_zags, zag_skip_count);
-    generateLinearBasedInfill(outline_offset - infill_line_width / 2, result, line_distance, rotation_matrix, zigzag_processor, connected_zigzags, shift);
+    generateLinearBasedInfill(outline_offset, result, line_distance, rotation_matrix, zigzag_processor, connected_zigzags, shift);
 }
 
 /* 

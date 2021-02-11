@@ -83,20 +83,24 @@ INLINE coord_t vSize2(const Point& p0)
 }
 INLINE float vSize2f(const Point& p0)
 {
-    return float(p0.X)*float(p0.X)+float(p0.Y)*float(p0.Y);
+    return static_cast<float>(p0.X)*static_cast<float>(p0.X)+static_cast<float>(p0.Y)*static_cast<float>(p0.Y);
 }
 INLINE double vSize2d(const Point& p0)
 {
-	return double(p0.X)*double(p0.X) + double(p0.Y)*double(p0.Y);
+    return static_cast<double>(p0.X)*static_cast<double>(p0.X)+static_cast<double>(p0.Y)*static_cast<double>(p0.Y);
 }
 
-INLINE bool shorterThen(const Point& p0, int32_t len)
+INLINE bool shorterThen(const Point& p0, const coord_t len)
 {
     if (p0.X > len || p0.X < -len)
+    {
         return false;
+    }
     if (p0.Y > len || p0.Y < -len)
+    {
         return false;
-    return vSize2(p0) <= len*len;
+    }
+    return vSize2(p0) <= len * len;
 }
 
 INLINE coord_t vSize(const Point& p0)
@@ -155,7 +159,7 @@ INLINE double angle(const Point& p)
 }
 
 }//namespace cura
-    
+
 namespace std {
 template <>
 struct hash<cura::Point> {
@@ -165,7 +169,7 @@ struct hash<cura::Point> {
         int result = 89;
         result = result * prime + pp.X;
         result = result * prime + pp.Y;
-        return result; 
+        return result;
     }
 };
 }
@@ -206,16 +210,16 @@ public:
         matrix[3] = matrix[0];
     }
 
-	PointMatrix(const Point p, double rotation)
-	{
-		rotation = rotation / 180 * M_PI;
-		double _sin = sin(rotation);
-		double _cos = cos(rotation);
+    PointMatrix(const Point p, double rotation)
+    {
+        rotation = rotation / 180 * M_PI;
+        double _sin = sin(rotation);
+        double _cos = cos(rotation);
 
-		matrix[0] = p.X * _cos;
-		matrix[1] = p.Y * -_sin;
-		matrix[2] = p.X * _sin;
-		matrix[3] = p.Y * _cos;
+        matrix[0] = p.X * _cos;
+        matrix[1] = p.Y * -_sin;
+        matrix[2] = p.X * _sin;
+        matrix[3] = p.Y * _cos;
 	}
 
     Point apply(const Point p) const

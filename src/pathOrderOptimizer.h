@@ -9,6 +9,8 @@
 #include "settings/EnumSettings.h"
 #include "utils/polygon.h"
 #include "utils/polygonUtils.h"
+#include "sliceDataStorage.h"
+#include "settings/types/Ratio.h"
 
 namespace cura {
 
@@ -35,6 +37,34 @@ public:
     , corner_pref(corner_pref)
     {
     }
+};
+
+/*
+ * Config seam cross preference for inset0/inset1
+ */
+class ZSeamCrossConfig
+{
+public:
+	const bool is_inset0;
+	EZSeamCross z_seam_cross;
+	float start_flow;
+	float start_speed;
+	coord_t start_distance;
+	float finish_flow;
+	float finish_speed;
+	coord_t finish_distance;
+
+	ZSeamCrossConfig(const SliceMeshStorage& mesh, const bool is_inset0)
+		: is_inset0(is_inset0)
+		, z_seam_cross(mesh.settings.get<EZSeamCross>(is_inset0 ? "z_seam_cross_0" : "z_seam_cross_1"))
+		, start_flow(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_start_flow": "z_seam_cross_1_start_flow")))
+		, start_speed(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_start_speed" : "z_seam_cross_1_start_speed")))
+		, start_distance(mesh.settings.get<coord_t>(is_inset0 ? "z_seam_cross_0_start_distance" : "z_seam_cross_1_start_distance"))
+		, finish_flow(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_finish_flow" : "z_seam_cross_1_finish_flow")))
+		, finish_speed(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_finish_speed" : "z_seam_cross_1_finish_speed")))
+		, finish_distance(mesh.settings.get<coord_t>(is_inset0 ? "z_seam_cross_0_finish_distance" : "z_seam_cross_1_finish_distance"))
+	{
+	}
 };
 
 /*
@@ -69,7 +99,7 @@ public:
 private:
 	bool isCoincident(const Point& a, const Point& b)
 	{
-		return vSize2(a - b) < 100; // points are closer than 10uM, consider them coincident
+		return vSize2(a - b) < 10; // points are closer than 10uM, consider them coincident
 	}
 
 	/*

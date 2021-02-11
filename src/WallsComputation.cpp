@@ -6,6 +6,7 @@
 #include "sliceDataStorage.h"
 #include "WallsComputation.h"
 #include "settings/types/Ratio.h"
+#include "settings/EnumSettings.h"
 #include "utils/polygonUtils.h"
 
 namespace cura {
@@ -24,11 +25,10 @@ WallsComputation::WallsComputation(const Settings& settings, const LayerIndex la
  */
 void WallsComputation::generateInsets(SliceLayerPart* part)
 {
-	const bool optimize_wall_printing_order = settings.get<bool>("optimize_wall_printing_order");
+    const bool optimize_wall_printing_order = settings.get<bool>("optimize_wall_printing_order");
     size_t inset_count = settings.get<size_t>("wall_line_count");
     const bool spiralize = settings.get<bool>("magic_spiralize");
-
-    if (spiralize && layer_nr < LayerIndex(settings.get<size_t>("bottom_layers")) && ((layer_nr % 2) + 2) % 2 == 1) //Add extra insets every 2 layers when spiralizing. This makes bottoms of cups watertight.
+    if (spiralize && layer_nr < LayerIndex(settings.get<size_t>("initial_bottom_layers")) && ((layer_nr % 2) + 2) % 2 == 1) //Add extra insets every 2 layers when spiralizing. This makes bottoms of cups watertight.
     {
         inset_count += 5;
     }
@@ -46,19 +46,21 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
 
     const coord_t wall_0_inset = settings.get<coord_t>("wall_0_inset");
     coord_t line_width_0 = settings.get<coord_t>("wall_line_width_0");
-	coord_t line_width_1 = settings.get<coord_t>("wall_line_width_1");
+    coord_t line_width_1 = settings.get<coord_t>("wall_line_width_1");
     coord_t line_width_x = settings.get<coord_t>("wall_line_width_x");
     if (layer_nr == 0)
     {
         const ExtruderTrain& train_wall_0 = settings.get<ExtruderTrain&>("wall_0_extruder_nr");
         line_width_0 *= train_wall_0.settings.get<Ratio>("initial_layer_line_width_factor");
-		const ExtruderTrain& train_wall_1 = settings.get<ExtruderTrain&>("wall_1_extruder_nr");
-		line_width_1 *= train_wall_1.settings.get<Ratio>("initial_layer_line_width_factor");
-		const ExtruderTrain& train_wall_x = settings.get<ExtruderTrain&>("wall_x_extruder_nr");
+        const ExtruderTrain& train_wall_1 = settings.get<ExtruderTrain&>("wall_1_extruder_nr");
+        line_width_1 *= train_wall_1.settings.get<Ratio>("initial_layer_line_width_factor");
+        const ExtruderTrain& train_wall_x = settings.get<ExtruderTrain&>("wall_x_extruder_nr");
         line_width_x *= train_wall_x.settings.get<Ratio>("initial_layer_line_width_factor");
     }
 
-    const bool recompute_outline_based_on_outer_wall = (settings.get<bool>("support_enable") || settings.get<bool>("support_tree_enable")) && !settings.get<bool>("fill_outline_gaps");
+    const bool recompute_outline_based_on_outer_wall =
+        settings.get<bool>("support_enable") &&
+        !settings.get<bool>("fill_outline_gaps");
     for(size_t i = 0; i < inset_count; i++)
     {
         part->insets.push_back(Polygons());
@@ -68,14 +70,14 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
         }
         else if (i == 1)
         {
-			if (optimize_wall_printing_order)
-			{
-				part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_x / 2);
-			}
-			else
-			{
-				part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_1 / 2);
-			}
+            if (optimize_wall_printing_order)
+            {
+                part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_x / 2);
+            }
+            else
+            {
+                part->insets[1] = part->insets[0].offset(-line_width_0 / 2 + wall_0_inset - line_width_1 / 2);
+            }
         }
         else
         {
@@ -97,14 +99,14 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
             }
             else if (i == 1)
             {
-				if (optimize_wall_printing_order)
-				{
-					alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_x / 2);
-				}
-				else
-				{
-					alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_1 / 2);
-				}
+                if (optimize_wall_printing_order)
+                {
+                    alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_x / 2);
+                }
+                else
+                {
+                    alternative_inset = part->insets[0].offset(-(line_width_0 - try_smaller) / 2 + wall_0_inset - line_width_1 / 2);
+                }
             }
             else
             {
@@ -117,7 +119,13 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
         }
 
         //Finally optimize all the polygons. Every point removed saves time in the long run.
-        part->insets[i].simplify();
+        const ExtruderTrain& train_wall = settings.get<ExtruderTrain&>(
+            optimize_wall_printing_order ?
+            (i == 0 ? "wall_0_extruder_nr" : "wall_x_extruder_nr")
+            : (i == 0 ? "wall_0_extruder_nr" : (i == 1 ? "wall_1_extruder_nr" : "wall_x_extruder_nr")));
+        const coord_t maximum_resolution = train_wall.settings.get<coord_t>("meshfix_maximum_resolution");
+        const coord_t maximum_deviation = train_wall.settings.get<coord_t>("meshfix_maximum_deviation");
+        part->insets[i].simplify(maximum_resolution, maximum_deviation);
         part->insets[i].removeDegenerateVerts();
         if (i == 0)
         {

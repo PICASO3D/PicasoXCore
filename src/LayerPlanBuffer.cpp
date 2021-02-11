@@ -88,6 +88,7 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
 
     Point first_location_new_layer = new_layer_destination_state->first;
 
+    // Inaceptable for Picaso HW
     //assert(newest_layer->extruder_plans.front().extruder_nr == prev_layer->extruder_plans.back().extruder_nr);
     assert(newest_layer->extruder_plans.front().paths.size() > 0);
     assert(newest_layer->extruder_plans.front().paths[0].points.size() == 1);
@@ -102,7 +103,14 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
         const bool force_retract = extruder_settings.get<bool>("retract_at_layer_change") ||
           (mesh_group_settings.get<bool>("travel_retract_before_outer_wall") && (mesh_group_settings.get<bool>("outer_inset_first") || mesh_group_settings.get<size_t>("wall_line_count") == 1)); //Moving towards an outer wall.
         prev_layer->final_travel_z = newest_layer->z;
-        prev_layer->addTravel(first_location_new_layer, force_retract);
+        GCodePath &path = prev_layer->addTravel(first_location_new_layer, force_retract);
+        if (force_retract && !path.retract)
+        {
+            // addTravel() won't use retraction if the travel distance is less than retraction minimum travel setting
+            // so to avoid blobs when moving to the new layer height, which can occur if the z-axis speed is very slow,
+            // we force the path to use retraction
+            path.retract = true;
+        }
     }
 }
 
@@ -287,7 +295,12 @@ void LayerPlanBuffer::insertTempCommands(std::vector<ExtruderPlan*>& extruder_pl
         insertPreheatCommand_singleExtrusion(*prev_extruder_plan, extruder, extruder_plan.required_start_temperature);
         prev_extruder_plan->extrusion_temperature_command = --prev_extruder_plan->inserts.end();
     }
-    else 
+    else if (Application::getInstance().current_slice->scene.extruders[extruder].settings.get<bool>("machine_extruders_share_heater"))
+    {
+        // extruders share a heater so command the previous extruder to change to the temperature required for this extruder
+        insertPreheatCommand_singleExtrusion(*prev_extruder_plan, prev_extruder, extruder_plan.required_start_temperature);
+    }
+    else
     {
         insertPreheatCommand_multiExtrusion(extruder_plans, extruder_plan_idx);
         insertFinalPrintTempCommand(extruder_plans, extruder_plan_idx - 1);
@@ -502,6 +515,7 @@ void LayerPlanBuffer::insertTempCommands()
         const Temperature print_temp = preheat_config.getTemp(extruder, avg_flow, extruder_plan.is_initial_layer);
         const Temperature initial_print_temp = extruder_settings.get<Temperature>("material_initial_print_temperature");
         if (initial_print_temp == 0.0 // user doesn't want to use initial print temp feature
+            || extruder_settings.get<bool>("machine_extruders_share_heater") // ignore initial print temps when extruders share a heater
             || !extruder_used_in_meshgroup[extruder] // prime blob uses print temp rather than initial print temp
             || (overall_extruder_plan_idx > 0 && extruder_plans[overall_extruder_plan_idx - 1]->extruder_nr == extruder  // prev plan has same extruder ..
                 && extruder_plans[overall_extruder_plan_idx - 1]->estimates.getTotalUnretractedTime() > 0.0) // and prev extruder plan already heated to printing temperature
