@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef COMMUNICATION_H
@@ -16,6 +16,56 @@ enum class PrintFeatureType : unsigned char;
 class Polygons;
 class ConstPolygonRef;
 class ExtruderTrain;
+
+class PicasoProfileDurationStats {
+public:
+	size_t profile;				// speed profile
+	size_t duration_sec;		// dration seconds
+};
+
+class PicasoExtruderStats {
+public:
+	size_t extruder_nr;			// extruder number
+	bool is_used;				// is extruder used
+	float nozzle_size;			// extruder nozzle size
+	size_t filament_volume;		// extruded fillament volume (mm^3)
+
+	std::vector<PicasoProfileDurationStats> durations; // picaso profile durations (sec)
+
+	PicasoExtruderStats()
+		: extruder_nr(0)
+		, is_used(false)
+		, nozzle_size(0)
+		, filament_volume(0)
+		, durations(0)
+	{
+	}
+};
+
+class PicasoPrintTaskStats {
+public:
+	std::string task_id;
+	size_t extruder_used_count;		// used extruders used
+	size_t extruder_total_count;	// total extruders used
+	size_t extruder_start;			// start extruder number
+	size_t zhopp_count;				// count hops (Z)
+	size_t retract_count;			// count retracts (E)
+	float layer_height;				// regular layer height
+	float first_layer_height;		// first layer height
+
+	std::vector<PicasoExtruderStats> extruder_stats;
+
+	PicasoPrintTaskStats()
+		: task_id("")
+		, extruder_used_count(0)
+		, extruder_total_count(0)
+		, extruder_start(0)
+		, layer_height(0)
+		, first_layer_height(0)
+		, extruder_stats()
+	{}
+};
+
 
 /*
  * An abstract class to provide a common interface for all methods of
@@ -167,6 +217,8 @@ public:
      * or otherwise) should be sent any more regarding the last slice job.
      */
     virtual void sendFinishedSlicing() const = 0;
+
+	virtual void sendPicasoPrintTaskStats(const PicasoPrintTaskStats& pi_stats) const = 0;
 
     /*
      * \brief Get the next slice command from the communication and cause it to

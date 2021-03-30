@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "Application.h" //To flush g-code through the communication channel.
@@ -103,6 +103,22 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
         const bool force_retract = extruder_settings.get<bool>("retract_at_layer_change") ||
           (mesh_group_settings.get<bool>("travel_retract_before_outer_wall") && (mesh_group_settings.get<bool>("outer_inset_first") || mesh_group_settings.get<size_t>("wall_line_count") == 1)); //Moving towards an outer wall.
         prev_layer->final_travel_z = newest_layer->z;
+
+		const EGCodeFlavor gcodeFlavor = mesh_group_settings.get<EGCodeFlavor>("machine_gcode_flavor");
+
+		// <Picaso z-hop after extruder switch>
+		if (gcodeFlavor == EGCodeFlavor::PICASO)
+		{
+			// PLX-460 Bugfix Single extruder print
+			const int count_used = newest_layer->getCountPlannedExtruders();
+			if (count_used > 1)
+			{
+				// skip adding last connecting move to layer
+				return;
+			}
+		}
+		// </Picaso z-hop after extruder switch>
+
         GCodePath &path = prev_layer->addTravel(first_location_new_layer, force_retract);
         if (force_retract && !path.retract)
         {

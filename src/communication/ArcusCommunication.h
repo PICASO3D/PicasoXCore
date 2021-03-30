@@ -1,5 +1,5 @@
 //Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef ARCUSCOMMUNICATION_H
@@ -94,6 +94,8 @@ public:
      * or otherwise) should be sent any more regarding the last slice job.
      */
     void sendFinishedSlicing() const override;
+
+	void sendPicasoPrintTaskStats(const PicasoPrintTaskStats& stats) const override;
 
     /*
      * \brief Send the starting g-code separately so that it may be processed by

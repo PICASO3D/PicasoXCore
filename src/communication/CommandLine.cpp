@@ -1,5 +1,5 @@
 //Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <cstring> //For strtok and strcopy.
@@ -37,6 +37,7 @@ void CommandLine::beginGCode() { }
 void CommandLine::flushGCode() { }
 void CommandLine::sendCurrentPosition(const Point&) { }
 void CommandLine::sendFinishedSlicing() const { }
+void CommandLine::sendPicasoPrintTaskStats(const PicasoPrintTaskStats& pi_stats) const { }
 void CommandLine::sendLayerComplete(const LayerIndex&, const coord_t&, const coord_t&) { }
 void CommandLine::sendLineTo(const PrintFeatureType&, const Point&, const coord_t&, const coord_t&, const Velocity&) { }
 void CommandLine::sendOptimizedLayerData() { }

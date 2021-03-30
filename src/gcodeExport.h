@@ -1,5 +1,5 @@
 //Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef GCODEEXPORT_H
@@ -525,7 +525,10 @@ public:
      * \param retraction_config_old_extruder The extruder switch retraction config of the old extruder, to perform the extruder switch retraction with.
      * \param perform_z_hop The amount by which the print head should be z hopped during extruder switch, or zero if it should not z hop.
      */
-    void switchExtruder(size_t new_extruder, const RetractionConfig& retraction_config_old_extruder, coord_t perform_z_hop = 0);
+    void switchExtruder(size_t new_extruder, 
+		const RetractionConfig& retraction_config_old_extruder, 
+		const RetractionConfig& retraction_config_new_extruder,
+		coord_t perform_z_hop = 0);
 
     void writeCode(const char* str);
     

@@ -1,5 +1,5 @@
 //Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef LAYER_PLAN_H
@@ -356,6 +356,15 @@ public:
     {
         return layer_nr;
     }
+
+	/*!
+	* Get Planned Extruders
+	*/
+	std::vector<bool> getPlannedExtruders() const;
+	/*!
+	* Get Count Planned Extruders
+	*/
+	size_t getCountPlannedExtruders() const;
 
     /*!
      * Get the last planned position, or if no position has been planned yet, the user specified layer start position.

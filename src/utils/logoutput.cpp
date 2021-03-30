@@ -1,4 +1,4 @@
-/** Copyright (C) 2013 Ultimaker - Copyright (c) 2020 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2013 Ultimaker - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
 
 #include <stdio.h>
 #include <stdarg.h>

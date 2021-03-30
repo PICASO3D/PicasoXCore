@@ -1892,6 +1892,8 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
         const RetractionConfig& retraction_config = storage.retraction_config_per_extruder[extruder_plan.extruder_nr];
         coord_t z_hop_height = retraction_config.zHop;
 
+		bool extruder_switched = false;
+
         if (extruder_nr != extruder_plan.extruder_nr)
         {
             int prev_extruder = extruder_nr;
@@ -1903,12 +1905,18 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
             if (prev_extruder_train.settings.get<bool>("retraction_hop_after_extruder_switch"))
             {
                 z_hop_height = storage.extruder_switch_retraction_config_per_extruder[prev_extruder].zHop;
-                gcode.switchExtruder(extruder_nr, storage.extruder_switch_retraction_config_per_extruder[prev_extruder], z_hop_height);
+                gcode.switchExtruder(extruder_nr, 
+					storage.extruder_switch_retraction_config_per_extruder[prev_extruder], 
+					storage.extruder_switch_retraction_config_per_extruder[extruder_nr],
+					z_hop_height);
             }
             else
             {
-                gcode.switchExtruder(extruder_nr, storage.extruder_switch_retraction_config_per_extruder[prev_extruder]);
+                gcode.switchExtruder(extruder_nr,
+					storage.extruder_switch_retraction_config_per_extruder[prev_extruder],
+					storage.extruder_switch_retraction_config_per_extruder[extruder_nr]);
             }
+			extruder_switched = true;
 
             const ExtruderTrain& extruder = Application::getInstance().current_slice->scene.extruders[extruder_nr];
 
@@ -1960,6 +1968,7 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
         const ExtruderTrain& extruder = Application::getInstance().current_slice->scene.extruders[extruder_nr];
 
         bool update_extrusion_offset = true;
+		bool first_extrusion_path_after_switch = true;
 
         for(unsigned int path_idx = 0; path_idx < paths.size(); path_idx++)
         {
@@ -1995,7 +2004,15 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                 gcode.writeJerk(path.config->getJerk());
             }
 
-            if (path.retract)
+			// <Picaso z-hop after extruder switch>
+			bool skip_first_retract_after_extruder_switch =
+				gcode.getFlavor() == EGCodeFlavor::PICASO
+				&& extruder_switched
+				&& first_extrusion_path_after_switch
+				&& path.retract;
+			// </Picaso z-hop after extruder switch>
+
+            if (path.retract && !skip_first_retract_after_extruder_switch)
             {
                 gcode.writeRetraction(retraction_config);
                 if (path.perform_z_hop)
@@ -2103,6 +2120,12 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                 }
                 continue;
             }
+			// <Picaso z-hop after extruder switch>
+			else
+			{
+				first_extrusion_path_after_switch = false;
+			}
+			// </Picaso z-hop after extruder switch>
 
             bool spiralize = path.spiralize;
             if (!spiralize) // normal (extrusion) move (with coasting)
@@ -2433,6 +2456,31 @@ void LayerPlan::optimizePaths(const Point& starting_position)
         MergeInfillLines merger(extr_plan);
         merger.mergeInfillLines(extr_plan.paths, starting_position);
     }
+}
+
+std::vector<bool> LayerPlan::getPlannedExtruders() const
+{
+	std::vector<bool> used_extruders; // unique extruders used in next layer plan
+	const size_t extruder_count = Application::getInstance().current_slice->scene.extruders.size();
+	used_extruders.resize(extruder_count, false);
+	for (size_t idx = 0; idx < extruder_plans.size(); idx++)
+	{
+		used_extruders[extruder_plans[idx].extruder_nr] = true;
+	}
+	return used_extruders;
+}
+size_t LayerPlan::getCountPlannedExtruders() const
+{
+	const std::vector<bool> used_extruders = getPlannedExtruders();
+	int count_used = 0;
+	for (size_t idx = 0; idx < used_extruders.size(); idx++)
+	{
+		if (used_extruders[idx])
+		{
+			count_used++;
+		}
+	}
+	return count_used;
 }
 
 }//namespace cura

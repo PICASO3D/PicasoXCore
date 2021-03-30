@@ -1,4 +1,4 @@
-/** Copyright (C) 2016 Tim Kuipers - Copyright (c) 2020 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2016 Tim Kuipers - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
 
 #ifndef PROGRESS_PROGRESS_STAGE_ESTIMATOR_H
 #define PROGRESS_PROGRESS_STAGE_ESTIMATOR_H

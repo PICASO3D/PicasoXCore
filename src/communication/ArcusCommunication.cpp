@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifdef ARCUS
@@ -307,6 +307,12 @@ void ArcusCommunication::connect(const std::string& ip, const uint16_t port)
     private_data->socket->registerMessageType(&cura::proto::SlicingFinished::default_instance());
     private_data->socket->registerMessageType(&cura::proto::SettingExtruder::default_instance());
 
+	// <Picaso_TaskStatus>
+	private_data->socket->registerMessageType(&cura::proto::PrintTaskStats::default_instance());
+	private_data->socket->registerMessageType(&cura::proto::ExtruderStats::default_instance());
+	private_data->socket->registerMessageType(&cura::proto::ProfileDurationStats::default_instance());
+	// </Picaso_TaskStatus>
+
     log("Connecting to %s:%i\n", ip.c_str(), port);
     private_data->socket->connect(ip, port);
     while (private_data->socket->getState() != Arcus::SocketState::Connected && private_data->socket->getState() != Arcus::SocketState::Error)
@@ -372,6 +378,41 @@ void ArcusCommunication::sendFinishedSlicing() const
     std::shared_ptr<proto::SlicingFinished> done_message = std::make_shared<proto::SlicingFinished>();
     private_data->socket->sendMessage(done_message);
     logDebug("Sent slicing finished message.\n");
+}
+
+void ArcusCommunication::sendPicasoPrintTaskStats(const PicasoPrintTaskStats& pi_stats) const
+{
+	std::shared_ptr<proto::PrintTaskStats> message = std::make_shared<proto::PrintTaskStats>();
+	message->set_task_id(pi_stats.task_id);
+	message->set_extruder_used_count(pi_stats.extruder_used_count);
+	message->set_extruder_total_count(pi_stats.extruder_total_count);
+	message->set_extruder_start(pi_stats.extruder_start);
+	message->set_zhopp_count(pi_stats.zhopp_count);
+	message->set_retract_count(pi_stats.retract_count);
+	message->set_layer_height(pi_stats.layer_height);
+	message->set_first_layer_height(pi_stats.first_layer_height);
+
+	for (size_t extruder_nr = 0; extruder_nr < pi_stats.extruder_stats.size(); extruder_nr++)
+	{
+		const PicasoExtruderStats& pi_extruder_stats = pi_stats.extruder_stats[extruder_nr];
+
+		proto::ExtruderStats* extruder_stats = message->add_extruders();
+		extruder_stats->set_extruder(pi_extruder_stats.extruder_nr);
+		extruder_stats->set_is_used(pi_extruder_stats.is_used);
+		extruder_stats->set_nozzle_size(pi_extruder_stats.nozzle_size);
+		extruder_stats->set_filament_volume(pi_extruder_stats.filament_volume);
+
+		for (size_t duration_ind = 0; duration_ind < pi_extruder_stats.durations.size(); duration_ind++)
+		{
+			const PicasoProfileDurationStats& pi_duration_stats = pi_extruder_stats.durations[duration_ind];
+
+			proto::ProfileDurationStats* duration_stats = extruder_stats->add_profile_durations();
+			duration_stats->set_profile(pi_duration_stats.profile);
+			duration_stats->set_duration_sec(pi_duration_stats.duration_sec);
+		}
+	}
+
+	private_data->socket->sendMessage(message);
 }
 
 void ArcusCommunication::sendLayerComplete(const LayerIndex& layer_nr, const coord_t& z, const coord_t& thickness)

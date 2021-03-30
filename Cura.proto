@@ -141,3 +141,30 @@ message GCodePrefix {
 
 message SlicingFinished {
 }
+
+message PrintTaskStats {
+	string task_id = 1;
+	int32 extruder_used_count = 2;
+	int32 extruder_total_count = 3;
+	int32 extruder_start = 4;
+	int32 zhopp_count = 5;
+	int32 retract_count = 6;
+	float layer_height = 7;
+	float first_layer_height = 8;
+
+	repeated ExtruderStats extruders = 9;
+}
+
+message ExtruderStats {
+	int32 extruder = 1;
+	bool is_used = 2;
+	float nozzle_size = 3;
+	float filament_volume = 4;
+
+	repeated ProfileDurationStats profile_durations = 5;
+}
+
+message ProfileDurationStats {
+	int32 profile = 1;
+	int32 duration_sec = 2;
+}

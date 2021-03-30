@@ -1,6 +1,6 @@
 //Copyright (c) 2016 Scott Lenser
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef UTILS_SPARSE_POINT_GRID_H

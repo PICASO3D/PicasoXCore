@@ -303,6 +303,10 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 
 	case EGCodeFlavor::PICASO:
 	{
+		PicasoPrintTaskStats print_task_stats;
+		print_task_stats.extruder_total_count = extruder_count;
+		std::vector<PicasoExtruderStats>& extruder_stats = print_task_stats.extruder_stats;
+
 		const Scene& scene = Application::getInstance().current_slice->scene;
 
 		prefix << ";FLAVOR:" << flavorToString(flavor) << new_line;
@@ -314,21 +318,30 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 		prefix << ";GENERATOR.VERSION:" << VERSION << new_line;
 		prefix << ";GENERATOR.BUILD_DATE:" << Date::getDate().toStringDashed() << new_line;
 		prefix << ";MACHINE.NAME:" << machine_name << new_line;
-		
-		size_t used_extruders = 0;
 
+		// <start_extruder_nr>
 		size_t start_extruder_nr = 0;
-		for (size_t extr_nr = 0; extr_nr < extruder_count; extr_nr++)
+		if (scene.mesh_groups.size() > 0 && scene.mesh_groups[0].meshes.size() > 0)
 		{
-			if (extruder_is_used[extr_nr])
-			{
-				start_extruder_nr = extr_nr;
-				break;
-			}
+			// First Model Extruder
+			start_extruder_nr = scene.mesh_groups[0].meshes[0].settings.get<size_t>("extruder_nr");
 		}
+		if (scene.settings.get<EPlatformAdhesion>("adhesion_type") != EPlatformAdhesion::NONE)
+		{
+			// Adhesion Extruder
+			start_extruder_nr = scene.settings.get<size_t>("adhesion_extruder_nr");
+		}
+		print_task_stats.extruder_start = start_extruder_nr;
+		// </start_extruder_nr>
 
+		size_t used_extruders = 0;
 		for (size_t extr_nr = 0; extr_nr < extruder_count; extr_nr++)
 		{
+			PicasoExtruderStats single_extruder_stats;
+			single_extruder_stats.extruder_nr = extr_nr;
+			single_extruder_stats.is_used = extruder_is_used[extr_nr];
+			extruder_stats.push_back(single_extruder_stats);
+
 			if (!extruder_is_used[extr_nr])
 			{
 				continue;
@@ -339,13 +352,17 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 			if (filament_used.size() == extruder_count)
 			{
 				prefix << ";EXTRUDER_" << extr_nr << "_FILLAMENT=" << static_cast<int>(filament_used[extr_nr]) << new_line;
+				extruder_stats[extr_nr].filament_volume = static_cast<int>(filament_used[extr_nr]);
 			}
 			if (getExtruderIsUsed(extr_nr))
 			{
 				const Settings& extruder_settings = scene.extruders[extr_nr].settings;
 				prefix << ";EXTRUDER_" << extr_nr << "_DIAMETER=" << extruder_settings.get<double>("machine_nozzle_size") << new_line;
+				extruder_stats[extr_nr].nozzle_size = static_cast<float>(extruder_settings.get<double>("machine_nozzle_size"));
 			}
 		}
+		print_task_stats.extruder_used_count = used_extruders;
+
 		for (unsigned int c_ind = 0; c_ind < custom_comment.size(); c_ind++) {
 			const std::string comment_value = custom_comment[c_ind];
 			//logAlways(comment_value.c_str());
@@ -358,20 +375,34 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 		// Report Total Durations
 		for (auto it = total_estimates.durations.begin(); it != total_estimates.durations.end(); ++it)
 		{
+			size_t extruder_nr = it->first;
+			PicasoExtruderStats& single_extruder_stats = extruder_stats[extruder_nr];
+
+			//std::vector<PicasoProfileDurationStats> duration_stats;
 			for (size_t n = 0; n < it->second.size(); n++)
 			{
-				prefix << ";M1112 T" << it->first
+				prefix << ";M1112 T" << extruder_nr
 					<< " S" << n
 					<< " P" << PrecisionedDouble{ 0, it->second[n] } << new_line;
+
+				PicasoProfileDurationStats speed_profile_duration;
+				speed_profile_duration.profile = n;
+				speed_profile_duration.duration_sec = static_cast<size_t>(static_cast<double>(it->second[n]));
+				single_extruder_stats.durations.push_back(speed_profile_duration);
 
 				total_estimates_all_extruders[n] += it->second[n];
 			}
 		}
+
 		// Report Layer Additional Counters
 		prefix << ";M1114"
 			<< " Z" << total_estimates.zhopp_count
 			<< " E" << total_estimates.retract_count
 			<< " P" << PrecisionedDouble{ 0, total_estimates.extra_time } << new_line;
+
+		print_task_stats.zhopp_count = total_estimates.zhopp_count;
+		print_task_stats.retract_count = total_estimates.retract_count;
+
 		// Old Format combined extruders
 		for (size_t i = 0; i < (int)PicasoPrintMode::NumPicasoPrintModes; i++)
 		{
@@ -382,7 +413,7 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 		assert(used_extruders > 0 && extruder_count > 0 && extruder_count <= 2);
 
 		// TID - TaskIdentifier
-		const std::string tid_value = scene.settings.get<std::string>("machine_tid");
+		std::string tid_value = scene.settings.get<std::string>("machine_tid");
 		if (tid_value == "") {
 			std::ostringstream hash_string;
 			hash_string << "PicasoXCore_";
@@ -390,12 +421,10 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 			auto tm = *std::localtime(&t);
 			hash_string << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
 
-			//prefix << ";TID_STR=" << hash_string.str() << new_line;
-			prefix << ";TID: " << md5(hash_string.str(), true) << new_line;
+			tid_value = md5(hash_string.str(), true);
 		}
-		else {
-			prefix << ";TID: " << tid_value << new_line;
-		}
+		prefix << ";TID: " << tid_value << new_line;
+		print_task_stats.task_id = tid_value;
 
 		if (extruder_count == 1)
 		{
@@ -414,7 +443,11 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 		}
 
 		prefix << ";POLYGON_FIRST_LAYER_HEIGHT=" << scene.current_mesh_group->settings.get<double>("layer_height_0") << new_line;
+		print_task_stats.first_layer_height = static_cast<float>(scene.current_mesh_group->settings.get<double>("layer_height_0"));
+
 		prefix << ";POLYGON_LAYER_HEIGHT=" << scene.current_mesh_group->settings.get<double>("layer_height") << new_line;
+		print_task_stats.layer_height = static_cast<float>(scene.current_mesh_group->settings.get<double>("layer_height"));
+
 		//sb.Append($";POLYGON_SOLUBLE=0{new_line}");
 		//prefix << ";POLYGON_BASIC_FEEDRATE=" << Application::getInstance().current_slice->scene.current_mesh_group->settings.get<double>("speed_print") << new_line;
 		prefix << ";POLYGON_END_PARAMS" << new_line;
@@ -452,6 +485,10 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
 		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset0SeamCrossStart, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
 		prefix << getPathConfigFeatureConfig(scene, PathConfigFeature::Inset0SeamCrossFinish, "speed_wall_0", "acceleration_wall_0", "jerk_wall_0");
 
+		if (!Application::getInstance().communication->isSequential() && scene.settings.get<bool>("machine_use_task_stats"))
+		{
+			Application::getInstance().communication->sendPicasoPrintTaskStats(print_task_stats);
+		}
 	}
 	break;
 
@@ -1395,6 +1432,11 @@ void GCodeExport::writeExtrusion(const int x, const int y, const int z, const Ve
     extruder_attr[current_extruder].last_e_value_after_wipe += extrusion_per_mm * diff_length;
     const double new_e_value = current_e_value + extrusion_per_mm * diff_length;
 
+	//*output_stream << ";!!!!! DBG " << new_line;
+	//*output_stream << ";current_e_value = " << current_e_value << new_line;
+	//*output_stream << ";new_e_value = " << new_e_value << new_line;
+	//*output_stream << ";last_e_value_after_wipe = " << extruder_attr[current_extruder].last_e_value_after_wipe << new_line;
+
     *output_stream << "G1";
     writeFXYZE(speed, x, y, z, new_e_value, feature, featureType);
 }
@@ -1450,7 +1492,11 @@ void GCodeExport::writeUnretractionAndPrime()
                 // E-axis fillament down
                 *output_stream << "G11 E" << PrecisionedDouble{ 5, output_e };
 
-                if (prime_volume != 0)
+				//*output_stream << " ;prime_volume: " << prime_volume;
+				//*output_stream << " ;current_e_value: " << current_e_value;
+				//*output_stream << " ;retraction_e_amount_current: " << extruder_attr[current_extruder].retraction_e_amount_current;
+
+                if (prime_volume > 0)
                 {
                     *output_stream << ";prime_volume: " << prime_volume;
                 }
@@ -1620,9 +1666,16 @@ void GCodeExport::writeRetraction(const RetractionConfig& config, bool force, bo
     estimateCalculator.addRetract(true);
     *output_stream << new_line;
 
+	//*output_stream << ";!!!!! DBG !!!!!" << new_line;
+	//*output_stream << ";current_e_value = " << current_e_value << new_line;
+	//*output_stream << ";old_retraction_e_amount = " << old_retraction_e_amount << new_line;
+	//*output_stream << ";new_retraction_e_amount = " << new_retraction_e_amount << new_line;
+	//*output_stream << ";retraction_e_amount_current = " << extr_attr.retraction_e_amount_current << new_line;
+	//*output_stream << ";config.prime_volume = " << config.prime_volume << new_line;
+	//*output_stream << ";config.distance = " << config.distance << new_line;
+
     extr_attr.retraction_e_amount_current = new_retraction_e_amount; // suppose that for UM2 the retraction amount in the firmware is equal to the provided amount
     extr_attr.prime_volume += config.prime_volume;
-
 }
 
 void GCodeExport::writeZhopStart(const coord_t hop_height, Velocity speed/*= 0*/)
@@ -1766,7 +1819,10 @@ void GCodeExport::startExtruder(const size_t new_extruder)
     setExtruderFanNumber(new_extruder);
 }
 
-void GCodeExport::switchExtruder(size_t new_extruder, const RetractionConfig& retraction_config_old_extruder, coord_t perform_z_hop /*= 0*/)
+void GCodeExport::switchExtruder(size_t new_extruder, 
+	const RetractionConfig& retraction_config_old_extruder, 
+	const RetractionConfig& retraction_config_new_extruder,
+	coord_t perform_z_hop /*= 0*/)
 {
     if (current_extruder == new_extruder)
     {
@@ -1787,6 +1843,11 @@ void GCodeExport::switchExtruder(size_t new_extruder, const RetractionConfig& re
     }
 
     resetExtrusionValue(); // zero the E value on the old extruder, so that the current_e_value is registered on the old extruder
+
+	if (flavor == EGCodeFlavor::PICASO)
+	{
+		extruder_attr[new_extruder].retraction_e_amount_current = retraction_config_new_extruder.distance;
+	}
 
     const std::string end_code = old_extruder_settings.get<std::string>("machine_extruder_end_code");
 

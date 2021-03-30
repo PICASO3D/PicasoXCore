@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifdef _OPENMP
@@ -142,7 +142,7 @@ void Application::printLicense() const
     logAlways("\n");
     logAlways("PicasoXCore\n");
     logAlways("Copyright (C) 2020 Ultimaker\n");
-    logAlways("Copyright (C) 2020 PICASO 3D\n");
+    logAlways("Copyright (C) 2021 PICASO 3D\n");
     logAlways("\n");
     logAlways("This program is free software: you can redistribute it and/or modify\n");
     logAlways("it under the terms of the GNU Affero General Public License as published by\n");
