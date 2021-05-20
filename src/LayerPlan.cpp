@@ -1,5 +1,5 @@
 //Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2020 PICASO 3D
+//Copyright (c) 2021 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <cstring>
@@ -800,7 +800,7 @@ void LayerPlan::addWallLine(const Point& p0, const Point& p1, const SliceMeshSto
     }
 }
 
-void LayerPlan::addWall(ConstPolygonRef wall, int start_idx, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
+void LayerPlan::addWall(ConstPolygonRef wall, const size_t inset_number, int start_idx, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
 {
     // make sure wall start point is not above air!
     start_idx = locateFirstSupportedVertex(wall, start_idx);
@@ -810,7 +810,8 @@ void LayerPlan::addWall(ConstPolygonRef wall, int start_idx, const SliceMeshStor
     coord_t distance_to_bridge_start = 0; // will be updated before each line is processed
 
     const coord_t min_bridge_line_len = mesh.settings.get<coord_t>("bridge_wall_min_length");
-    const Ratio wall_min_flow = mesh.settings.get<Ratio>("wall_min_flow");
+	const std::string wall_min_flow_name = (inset_number == 0 ? "wall_min_flow_0" : (inset_number == 1 ? "wall_min_flow_1" : "wall_min_flow_x"));
+	const Ratio wall_min_flow = mesh.settings.get<Ratio>(wall_min_flow_name);
     const bool wall_min_flow_retract = mesh.settings.get<bool>("wall_min_flow_retract");
     const coord_t small_feature_max_length = mesh.settings.get<coord_t>("small_feature_max_length");
     const bool is_small_feature = (small_feature_max_length > 0) && wall.shorterThan(small_feature_max_length);
@@ -1003,6 +1004,7 @@ void LayerPlan::addWall(ConstPolygonRef wall, int start_idx, const SliceMeshStor
 
 void LayerPlan::addWall_p0p1(
 	ConstPolygonRef wall, 
+	const size_t inset_number,
 	int start_idx, 
 	const WallSeamConfig& seamConfig, 
 	const SliceMeshStorage& mesh,
@@ -1011,6 +1013,7 @@ void LayerPlan::addWall_p0p1(
 	const GCodePathConfig& non_bridge_config, 
 	const GCodePathConfig& bridge_config,
 	WallOverlapComputation* wall_overlap_computation, 
+	const bool overlaped_wall,
 	coord_t wall_0_wipe_dist, 
 	float flow_ratio, 
 	bool always_retract)
@@ -1028,7 +1031,8 @@ void LayerPlan::addWall_p0p1(
 	coord_t distance_to_bridge_start = 0; // will be updated before each line is processed
 
 	const coord_t min_bridge_line_len = mesh.settings.get<coord_t>("bridge_wall_min_length");
-	const Ratio wall_min_flow = mesh.settings.get<Ratio>("wall_min_flow");
+	const std::string wall_min_flow_name = (inset_number == 0 ? "wall_min_flow_0" : (inset_number == 1 ? "wall_min_flow_1" : "wall_min_flow_x" ));
+	const Ratio wall_min_flow = mesh.settings.get<Ratio>(wall_min_flow_name);
 	const bool wall_min_flow_retract = mesh.settings.get<bool>("wall_min_flow_retract");
 	
 	const coord_t small_feature_max_length = mesh.settings.get<coord_t>("small_feature_max_length");
@@ -1121,7 +1125,7 @@ void LayerPlan::addWall_p0p1(
 
 	Point p0 = wall[start_idx];
 
-	if (unchanged_supported_vertex)
+	if (unchanged_supported_vertex && overlaped_wall == false)
 	{
 		bool on_seam_point = false;
 		if (seamConfig.point_crossing_found)
@@ -1213,7 +1217,7 @@ void LayerPlan::addWall_p0p1(
 	{
 		Point p1 = wall[start_idx];
 
-		if (unchanged_supported_vertex)
+		if (unchanged_supported_vertex && overlaped_wall == false)
 		{
 			if (seamConfig.corner_pref == EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_SMOOTH)
 			{
@@ -1246,6 +1250,7 @@ void LayerPlan::addWall_p0p1(
 
 			bool crossing_mode = false;
 			if (unchanged_supported_vertex
+				&& overlaped_wall == false
 				&& seamConfig.point_crossing_found
 				&& seamConfig.cross_cfg != EZSeamCross::NONE)
 			{
@@ -1298,6 +1303,7 @@ void LayerPlan::addWall_p0p1(
 // For Perimeter 0 try add movements between start points and 
 void LayerPlan::addWalls_p0p1(
 	const Polygons& walls, 
+	const size_t inset_number,
 	const SliceMeshStorage& mesh,
 	const PathConfigStorage::MeshPathConfigs& mesh_config, 
 	const ZSeamCrossConfig& z_seam_cross_config,
@@ -1316,15 +1322,20 @@ void LayerPlan::addWalls_p0p1(
 	}
 	orderOptimizer.optimize(true);
 
+	const Ratio wall_min_flow = mesh.settings.get<Ratio>("wall_min_flow");
 	const coord_t machine_nozzle_size = mesh.settings.get<coord_t>("machine_nozzle_size");
 	const bool wall_min_flow_retract = mesh.settings.get<bool>("wall_min_flow_retract");
 	const bool debug_normals_enabled = mesh.settings.get<bool>("magic_debug_normals_enabled");
 	float non_bridge_line_volume = max_non_bridge_line_volume; // assume extruder is fully pressurised before first non-bridge line is output
 
-	for (unsigned int poly_idx : orderOptimizer.polyOrder)
+	Polygons walls_overlap_check(walls);
+	WallOverlapComputation woc_overlap_check(walls_overlap_check, non_bridge_config.getLineWidth()); // copy of wall_overlap_computation for seamCross checks
+
+	for (size_t poly_idx : orderOptimizer.polyOrder)
 	{
 		const ConstPolygonRef& wall = walls[poly_idx];
-		int start_idx = orderOptimizer.polyStart[poly_idx];
+		const int start_idx = orderOptimizer.polyStart[poly_idx];
+		const bool wall_orientation = wall.orientation();
 
 		if (debug_normals_enabled) // show needles
 		{
@@ -1334,7 +1345,7 @@ void LayerPlan::addWalls_p0p1(
 
 				Point p0;
 				ZSeamCrossing seamCrossing(wall, ind);
-				if (seamCrossing.FindCrossing_Mode_Normal(walls, p0, machine_nozzle_size, machine_nozzle_size, false))
+				if (seamCrossing.FindCrossing_Mode_Normal(wall, p0, machine_nozzle_size, machine_nozzle_size, false))
 				{
 					addTravel(p0, wall_min_flow_retract);
 					addWallLine(p0, p1, mesh, non_bridge_config, bridge_config, flow_ratio / 10, non_bridge_line_volume, 1.0, 0);
@@ -1358,7 +1369,7 @@ void LayerPlan::addWalls_p0p1(
 		case EZSeamCross::NORMAL:
 		{
 			Point p0; // start & end
-			if (seamCrossing.FindCrossing_Mode_Normal(walls, p0, z_seam_cross_config.start_distance, z_seam_cross_config.finish_distance, true))
+			if (seamCrossing.FindCrossing_Mode_Normal(wall, p0, z_seam_cross_config.start_distance, z_seam_cross_config.finish_distance, wall_orientation))
 			{
 				WallSeamCornerPoint point_start(p0, z_seam_cross_config.start_flow, z_seam_cross_config.start_speed);
 				WallSeamCornerPoint point_finish(p0, z_seam_cross_config.finish_flow, z_seam_cross_config.finish_speed);
@@ -1373,7 +1384,7 @@ void LayerPlan::addWalls_p0p1(
 			const float angle_divider = (z_seam_cross_config.z_seam_cross == EZSeamCross::HALF) ? 2.0 : 4.0;
 			Point p0_start;
 			Point p0_end;
-			if (seamCrossing.FindCrossing_Mode_Custom(walls, p0_start, p0_end, z_seam_cross_config.start_distance, z_seam_cross_config.finish_distance, angle_divider, true))
+			if (seamCrossing.FindCrossing_Mode_Custom(wall, p0_start, p0_end, z_seam_cross_config.start_distance, z_seam_cross_config.finish_distance, angle_divider, wall_orientation))
 			{
 				WallSeamCornerPoint point_start(p0_start, z_seam_cross_config.start_flow, z_seam_cross_config.start_speed);
 				WallSeamCornerPoint point_finish(p0_end, z_seam_cross_config.finish_flow, z_seam_cross_config.finish_speed);
@@ -1386,8 +1397,26 @@ void LayerPlan::addWalls_p0p1(
 			break;
 		}
 
+		// <WallOverlapBugfixSeamCrossNSmoth>
+		bool overlaped_wall = false;
+		if (wall_overlap_computation)
+		{
+			Point p0_overlap_cleck = wall[start_idx];
+			const Point& p1_overlap_cleck = wall[(start_idx + 1) % wall.size()];
+			const float flow_overlap_cleck = flow_ratio * woc_overlap_check.getFlow(p0_overlap_cleck, p1_overlap_cleck);
+			overlaped_wall = flow_overlap_cleck < wall_min_flow;
+			for (unsigned int point_idx = 1; point_idx < wall.size(); point_idx++)
+			{
+				const Point& p1 = wall[(start_idx + point_idx) % wall.size()];
+				const float flow = flow_ratio * woc_overlap_check.getFlow(p0_overlap_cleck, p1);
+				p0_overlap_cleck = p1;
+			}
+		}
+		// </WallOverlapBugfixSeamCrossNSmoth>
+		
 		addWall_p0p1(
 			walls[poly_idx], 
+			inset_number,
 			orderOptimizer.polyStart[poly_idx], 
 			inset0_seam_coinfig, 
 			mesh, mesh_config,
@@ -1395,12 +1424,13 @@ void LayerPlan::addWalls_p0p1(
 			non_bridge_config,
 			bridge_config,
 			wall_overlap_computation, 
+			overlaped_wall,
 			wall_0_wipe_dist, 
 			flow_ratio, always_retract);
 	}
 }
 
-void LayerPlan::addWalls(const Polygons& walls, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, const ZSeamConfig& z_seam_config, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
+void LayerPlan::addWalls(const Polygons& walls, const size_t inset_number, const SliceMeshStorage& mesh, const GCodePathConfig& non_bridge_config, const GCodePathConfig& bridge_config, WallOverlapComputation* wall_overlap_computation, const ZSeamConfig& z_seam_config, coord_t wall_0_wipe_dist, float flow_ratio, bool always_retract)
 {
     PathOrderOptimizer orderOptimizer(getLastPlannedPositionOrStartingPosition(), z_seam_config);
     for (unsigned int poly_idx = 0; poly_idx < walls.size(); poly_idx++)
@@ -1410,7 +1440,7 @@ void LayerPlan::addWalls(const Polygons& walls, const SliceMeshStorage& mesh, co
     orderOptimizer.optimize();
     for (unsigned int poly_idx : orderOptimizer.polyOrder)
     {
-        addWall(walls[poly_idx], orderOptimizer.polyStart[poly_idx], mesh, non_bridge_config, bridge_config, wall_overlap_computation, wall_0_wipe_dist, flow_ratio, always_retract);
+        addWall(walls[poly_idx], inset_number, orderOptimizer.polyStart[poly_idx], mesh, non_bridge_config, bridge_config, wall_overlap_computation, wall_0_wipe_dist, flow_ratio, always_retract);
     }
 }
 

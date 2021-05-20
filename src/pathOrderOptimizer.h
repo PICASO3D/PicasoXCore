@@ -78,14 +78,14 @@ public:
 	Point pC;
 
 	// default
-	ZSeamCrossing(const ConstPolygonRef& wall, int start_idx)
+	ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx)
 		: pA(wall[(wall.size() + start_idx - 1) % wall.size()])
 		, pB(wall[start_idx])
 		, pC(wall[(start_idx + 1) % wall.size()])
 	{
 	}
 
-	ZSeamCrossing(const ConstPolygonRef& wall, int start_idx, const Point& p0)
+	ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx, const Point& p0)
 		:pA(wall[(wall.size() + start_idx - 1) % wall.size()])
 		, pB(p0)
 		, pC(wall[start_idx])
@@ -93,8 +93,8 @@ public:
 	}
 
 
-	bool FindCrossing_Mode_Normal(const Polygons& walls, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside);
-	bool FindCrossing_Mode_Custom(const Polygons& walls, Point& point_start, Point& point_finish, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside);
+	bool FindCrossing_Mode_Normal(const ConstPolygonRef& wall, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside);
+	bool FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point& point_start, Point& point_finish, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside);
 
 private:
 	bool isCoincident(const Point& a, const Point& b)

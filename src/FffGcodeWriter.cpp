@@ -2261,6 +2261,7 @@ bool FffGcodeWriter::processInsets(const SliceDataStorage& storage, LayerPlan& g
 							WallOverlapComputation* wall_overlap_computation(nullptr);
 							gcode_layer.addWalls_p0p1(
 								outer_wall,
+								outer_inset_number,
 								mesh, mesh_config,
 								z_seam_cross_config,
 								mesh_config.inset0_config,
@@ -2275,6 +2276,7 @@ bool FffGcodeWriter::processInsets(const SliceDataStorage& storage, LayerPlan& g
 							WallOverlapComputation wall_overlap_computation(outer_wall, mesh_config.inset0_config.getLineWidth());
 							gcode_layer.addWalls_p0p1(
 								outer_wall,
+								outer_inset_number,
 								mesh, mesh_config,
 								z_seam_cross_config,
 								mesh_config.inset0_config,
@@ -2302,6 +2304,7 @@ bool FffGcodeWriter::processInsets(const SliceDataStorage& storage, LayerPlan& g
 							WallOverlapComputation* wall_overlap_computation(nullptr);
 							gcode_layer.addWalls_p0p1(
 								outer_wall,
+								outer_inset_number,
 								mesh, mesh_config,
 								z_seam_cross_config,
 								mesh_config.inset1_config,
@@ -2315,7 +2318,8 @@ bool FffGcodeWriter::processInsets(const SliceDataStorage& storage, LayerPlan& g
 						{
 							WallOverlapComputation wall_overlap_computation(outer_wall, mesh_config.inset1_config.getLineWidth());
 							gcode_layer.addWalls_p0p1(
-								outer_wall, 
+								outer_wall,
+								outer_inset_number,
 								mesh, mesh_config, 
 								z_seam_cross_config,
 								mesh_config.inset1_config, 
@@ -2338,12 +2342,12 @@ bool FffGcodeWriter::processInsets(const SliceDataStorage& storage, LayerPlan& g
                     if (!compensate_overlap_x)
                     {
                         WallOverlapComputation* wall_overlap_computation(nullptr);
-                        gcode_layer.addWalls(part.insets[processed_inset_idx], mesh, mesh_config.insetX_config, mesh_config.bridge_insetX_config, wall_overlap_computation, z_seam_config);
+                        gcode_layer.addWalls(part.insets[processed_inset_idx], processed_inset_idx, mesh, mesh_config.insetX_config, mesh_config.bridge_insetX_config, wall_overlap_computation, z_seam_config);
                     }
                     else
                     {
                         WallOverlapComputation wall_overlap_computation(inner_wall, mesh_config.insetX_config.getLineWidth());
-                        gcode_layer.addWalls(inner_wall, mesh, mesh_config.insetX_config, mesh_config.bridge_insetX_config, &wall_overlap_computation, z_seam_config);
+                        gcode_layer.addWalls(inner_wall, processed_inset_idx, mesh, mesh_config.insetX_config, mesh_config.bridge_insetX_config, &wall_overlap_computation, z_seam_config);
                     }
                 }
             }
@@ -2528,6 +2532,7 @@ bool FffGcodeWriter::processSkinPart(
 
 void FffGcodeWriter::processSkinInsets(const SliceDataStorage& storage, LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const size_t extruder_nr, const PathConfigStorage::MeshPathConfigs& mesh_config, const SkinPart& skin_part, bool& added_something) const
 {
+	const size_t inset_number = 2; // any inner inset number
 	const size_t roofing_extruder_nr = mesh.settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr;
 
 	if (extruder_nr == roofing_extruder_nr)
@@ -2539,7 +2544,7 @@ void FffGcodeWriter::processSkinInsets(const SliceDataStorage& storage, LayerPla
 				added_something = true;
 				setExtruder_addPrime(storage, gcode_layer, extruder_nr);
 				gcode_layer.setIsInside(true); // going to print stuff inside print object
-				gcode_layer.addWalls(roof_perimeter, mesh, mesh_config.roofing_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
+				gcode_layer.addWalls(roof_perimeter, inset_number, mesh, mesh_config.roofing_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
 			}
 		}
 	}
@@ -2555,7 +2560,7 @@ void FffGcodeWriter::processSkinInsets(const SliceDataStorage& storage, LayerPla
 				added_something = true;
 				setExtruder_addPrime(storage, gcode_layer, extruder_nr);
 				gcode_layer.setIsInside(true); // going to print stuff inside print object
-				gcode_layer.addWalls(floor_perimeter, mesh, mesh_config.roofing_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
+				gcode_layer.addWalls(floor_perimeter, inset_number, mesh, mesh_config.roofing_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
 			}
 		}
 	}
@@ -2571,7 +2576,7 @@ void FffGcodeWriter::processSkinInsets(const SliceDataStorage& storage, LayerPla
 				added_something = true;
 				setExtruder_addPrime(storage, gcode_layer, extruder_nr);
 				gcode_layer.setIsInside(true); // going to print stuff inside print object
-				gcode_layer.addWalls(skin_perimeter, mesh, mesh_config.skin_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
+				gcode_layer.addWalls(skin_perimeter, inset_number, mesh, mesh_config.skin_config, mesh_config.bridge_skin_config, nullptr); // add polygons to gcode in inward order
 			}
 		}
 	}
@@ -3386,7 +3391,7 @@ bool FffGcodeWriter::addSupportRoofsToGCode(const SliceDataStorage& storage, Lay
     Infill roof_computation(
         pattern, zig_zaggify_infill, connect_polygons, infill_outline, outline_offset, gcode_layer.configs_storage.support_roof_config.getLineWidth(),
         support_roof_line_distance, support_roof_overlap, infill_multiplier, fill_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
-        wall_line_count, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
+        0/*wall_line_count*/, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
         );
     Polygons roof_polygons;
     Polygons roof_lines;
@@ -3483,7 +3488,7 @@ bool FffGcodeWriter::addSupportUnderRoofsToGCode(const SliceDataStorage& storage
     Infill roof_computation(
         pattern, zig_zaggify_infill, connect_polygons, infill_outline, outline_offset, gcode_layer.configs_storage.support_under_roof_config.getLineWidth(),
         support_roof_line_distance, support_roof_overlap, infill_multiplier, fill_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
-        wall_line_count, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
+        0/*wall_line_count*/, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
     );
     Polygons roof_polygons;
     Polygons roof_lines;
@@ -3577,7 +3582,7 @@ bool FffGcodeWriter::addSupportBottomsToGCode(const SliceDataStorage& storage, L
     Infill bottom_computation(
         pattern, zig_zaggify_infill, connect_polygons, infill_outline, outline_offset, gcode_layer.configs_storage.support_bottom_config.getLineWidth(),
         support_bottom_line_distance, support_bottom_overlap, infill_multiplier, fill_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
-        wall_line_count, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
+        0/*wall_line_count*/, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
         );
     Polygons bottom_polygons;
     Polygons bottom_lines;
@@ -3671,7 +3676,7 @@ bool FffGcodeWriter::addSupportAboveBottomsToGCode(const SliceDataStorage& stora
     Infill bottom_computation(
             pattern, zig_zaggify_infill, connect_polygons, infill_outline, outline_offset, gcode_layer.configs_storage.support_above_bottom_config.getLineWidth(),
             support_bottom_line_distance, support_bottom_overlap, infill_multiplier, fill_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
-            wall_line_count, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
+            0/*wall_line_count*/, infill_origin, perimeter_gaps, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size
         );
     Polygons bottom_polygons;
     Polygons bottom_lines;

@@ -28,7 +28,7 @@ constexpr coord_t SQUARED_COINCIDENT_POINT_DISTANCE = COINCIDENT_POINT_DISTANCE 
 * d`   |
 *      a
 */
-bool ZSeamCrossing::FindCrossing_Mode_Normal(const Polygons& walls, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside)
+bool ZSeamCrossing::FindCrossing_Mode_Normal(const ConstPolygonRef& wall, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside)
 {
 	float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
 	Point d = RotateCustomLeft(pA, pB, angle);
@@ -46,14 +46,14 @@ bool ZSeamCrossing::FindCrossing_Mode_Normal(const Polygons& walls, Point& point
 	// Reverse normal
 	const Point pD2 = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
 
-	if (walls.inside(pD1, false) == inside)
+	if (wall.inside(pD1, false) == inside)
 	{
 		mr = point_start_distance;
 		point = pB + Point((coord_t)(mr * (float)b_d.X / r_bd), (coord_t)(mr * (float)b_d.Y / r_bd));
 		return true;
 	}
 
-	if (walls.inside(pD2, false) == inside)
+	if (wall.inside(pD2, false) == inside)
 	{
 		mr = point_finish_distance;
 		point = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
@@ -71,7 +71,7 @@ bool ZSeamCrossing::FindCrossing_Mode_Normal(const Polygons& walls, Point& point
 * d`   |
 * (abd)a
 */
-bool ZSeamCrossing::FindCrossing_Mode_Custom(const Polygons& walls, Point& point_start, Point& point_end, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside)
+bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point& point_start, Point& point_end, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside)
 {
 	float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
 	Point d = RotateCustomLeft(pA, pB, angle);
@@ -103,7 +103,7 @@ bool ZSeamCrossing::FindCrossing_Mode_Custom(const Polygons& walls, Point& point
 	// Reverse normal
 	const Point pD2 = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
 
-	if (walls.inside(pD1, false) == inside)
+	if (wall.inside(pD1, false) == inside)
 	{
 		coord_t mr_start = point_start_distance;
 		coord_t mr_finish = point_finish_distance;
@@ -112,7 +112,7 @@ bool ZSeamCrossing::FindCrossing_Mode_Custom(const Polygons& walls, Point& point
 		return true;
 	}
 
-	if (walls.inside(pD2, false) == inside)
+	if (wall.inside(pD2, false) == inside)
 	{
 		coord_t mr_start = point_start_distance;
 		coord_t mr_finish = point_finish_distance;

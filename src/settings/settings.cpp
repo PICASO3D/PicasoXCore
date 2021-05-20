@@ -507,7 +507,11 @@ template<> EZSeamCornerPrefType Settings::get<EZSeamCornerPrefType>(const std::s
     }
 	else if (value == "z_seam_corner_smooth")
 	{
-		return EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_SMOOTH;
+		// Disable Smooth wnen z_seam_type != USER_SPECIFIED
+		if (get<EZSeamType>("z_seam_type") == EZSeamType::USER_SPECIFIED)
+			return EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_SMOOTH;
+		else
+			return EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE;
 	}
     else //Default.
     {
@@ -517,6 +521,13 @@ template<> EZSeamCornerPrefType Settings::get<EZSeamCornerPrefType>(const std::s
 
 template<> EZSeamCross Settings::get<EZSeamCross>(const std::string& key) const
 {
+	// Disable EZSeamCross when wall(0/1) overlap enabled
+	if (get<bool>("travel_compensate_overlapping_walls_0_enabled")
+		|| get<bool>("travel_compensate_overlapping_walls_1_enabled"))
+	{
+		return EZSeamCross::NONE;
+	}
+
 	const std::string& value = get<std::string>(key);
 	if (value == "z_seam_cross_normal")
 	{
