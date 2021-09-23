@@ -130,8 +130,6 @@ private:
     Acceleration current_travel_acceleration; //!< The current acceleration (in mm/s^2) used for travel moves for those gcode flavors that have separate print and travel accelerations
     Velocity current_jerk; //!< The current jerk in the XY direction (in mm/s^3)
 
-    PicasoSpeedProfile current_speed_profile; //!< Current Picaso Speed Profile
-
     AABB3D total_bounding_box; //!< The bounding box of all g-code.
 
     double picasoPrintModeSpeed[(int)PicasoPrintMode::NumPicasoPrintModes][(int)PicasoSpeedProfile::NumPicasoSpeedProfiles]; //!< Picaso SpeedMode config
@@ -255,6 +253,11 @@ public:
 		const std::string& key_speed,
 		const std::string& key_acceleration,
 		const std::string& key_jerk);
+
+    std::string getFileDurationEstimateReport(
+        const size_t extruder,
+        const PathConfigFeature& feature,
+        const Duration& duration);
 
     void setLayerNr(unsigned int layer_nr);
 

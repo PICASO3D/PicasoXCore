@@ -36,8 +36,8 @@ GCodePathConfig createPerimeterGapConfig(const SliceMeshStorage& mesh, int layer
 {
     // The perimeter gap config follows the skin config, but has a different line width:
     // wall_line_width_x divided by two because the gaps are between 0 and 1 times the wall line width
-    const coord_t perimeter_gaps_line_width = mesh.settings.get<coord_t>("wall_line_width_0") / 2;
-    Velocity perimeter_gaps_speed = mesh.settings.get<Velocity>("speed_topbottom");
+    const coord_t perimeter_gaps_line_width = mesh.settings.get<coord_t>("perimeter_gap_line_width");
+    Velocity perimeter_gaps_speed = mesh.settings.get<Velocity>("speed_perimeter_gap");
     if (mesh.settings.get<bool>("speed_equalize_flow_enabled"))
     {
         const coord_t skin_line_width = mesh.settings.get<coord_t>("skin_line_width");
@@ -48,8 +48,8 @@ GCodePathConfig createPerimeterGapConfig(const SliceMeshStorage& mesh, int layer
             , PathConfigFeature::PerimeterGap
             , perimeter_gaps_line_width
             , layer_thickness
-            , mesh.settings.get<Ratio>("wall_x_material_flow") * ((layer_nr == 0) ? mesh.settings.get<Ratio>("material_flow_layer_0") : Ratio(1.0))
-            , GCodePathConfig::SpeedDerivatives{perimeter_gaps_speed, mesh.settings.get<Velocity>("acceleration_topbottom"), mesh.settings.get<Velocity>("jerk_topbottom")}
+            , mesh.settings.get<Ratio>("perimeter_gap_material_flow") * ((layer_nr == 0) ? mesh.settings.get<Ratio>("material_flow_layer_0") : Ratio(1.0))
+            , GCodePathConfig::SpeedDerivatives{perimeter_gaps_speed, mesh.settings.get<Velocity>("acceleration_perimeter_gap"), mesh.settings.get<Velocity>("jerk_perimeter_gap")}
         );
 }
 

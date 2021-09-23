@@ -2611,7 +2611,7 @@ void FffGcodeWriter::processRoofing(
 	}
 
 	const Ratio skin_density = 1.0;
-	const coord_t skin_overlap = 0; // skinfill already expanded over the roofing areas; don't overlap with perimeters
+    const coord_t skin_overlap = mesh.settings.get<coord_t>("skin_roofing_overlap_mm");
 	Polygons* perimeter_gaps_output = (fill_perimeter_gaps) ? &concentric_perimeter_gaps : nullptr;
 	//processSkinPrintFeature(storage, gcode_layer, mesh, extruder_nr, skin_part.roofing_fill, mesh_config.roofing_config, pattern, roofing_angle, skin_overlap, skin_density, perimeter_gaps_output, added_something);
 
@@ -2655,8 +2655,10 @@ void FffGcodeWriter::processTopBottom(
 	// generate skin_polygons and skin_lines (and concentric_perimeter_gaps if needed)
 	const GCodePathConfig* skin_config = &mesh_config.skin_config;
 	Ratio skin_density = 1.0;
-	coord_t skin_overlap = mesh.settings.get<coord_t>("skin_overlap_mm");
-	const coord_t more_skin_overlap = std::max(skin_overlap, (coord_t)(mesh_config.insetX_config.getLineWidth() / 2)); // force a minimum amount of skin_overlap
+	coord_t skin_overlap = mesh.settings.get<coord_t>("skin_topbottom_overlap_mm");
+    const size_t mesh_wall_line_count = mesh.settings.get<size_t>("wall_line_count");
+    const coord_t mesh_wall_inner_width = mesh_wall_line_count > 2 ? mesh_config.insetX_config.getLineWidth() : (mesh_wall_line_count > 1 ? mesh_config.inset1_config.getLineWidth() : mesh_config.inset0_config.getLineWidth());
+	const coord_t more_skin_overlap = std::max(skin_overlap, (coord_t)(mesh_wall_inner_width / 2)); // force a minimum amount of skin_overlap
 	const bool bridge_settings_enabled = mesh.settings.get<bool>("bridge_settings_enabled");
 	const bool bridge_enable_more_layers = bridge_settings_enabled && mesh.settings.get<bool>("bridge_enable_more_layers");
 	const Ratio support_threshold = bridge_settings_enabled ? mesh.settings.get<Ratio>("bridge_skin_support_threshold") : 0.0_r;
@@ -2838,10 +2840,8 @@ void FffGcodeWriter::processFlooring(
 	}
 
 	// generate skin_polygons and skin_lines (and concentric_perimeter_gaps if needed)
-	const GCodePathConfig* skin_config = &mesh_config.skin_config;
 	Ratio skin_density = 1.0;
-	coord_t skin_overlap = mesh.settings.get<coord_t>("skin_overlap_mm");
-	const coord_t more_skin_overlap = std::max(skin_overlap, (coord_t)(mesh_config.insetX_config.getLineWidth() / 2)); // force a minimum amount of skin_overlap
+	coord_t skin_overlap = mesh.settings.get<coord_t>("skin_flooring_overlap_mm");
 	const bool bridge_settings_enabled = mesh.settings.get<bool>("bridge_settings_enabled");
 	const bool bridge_enable_more_layers = bridge_settings_enabled && mesh.settings.get<bool>("bridge_enable_more_layers");
 	const Ratio support_threshold = bridge_settings_enabled ? mesh.settings.get<Ratio>("bridge_skin_support_threshold") : 0.0_r;
@@ -2875,42 +2875,6 @@ void FffGcodeWriter::processFlooring(
 
 		if (angle_found || (supported_skin_part_regions.area() / (skin_part.outline.area() + 1) < support_threshold))
 		{
-			/*
-			if (angle_found)
-			{
-				switch (bridge_layer)
-				{
-				default:
-				case 1:
-					skin_angle = angle;
-					break;
-
-				case 2:
-					if (bottom_layers > 2)
-					{
-						// orientate second bridge skin at +45 deg to first
-						skin_angle = angle + 45;
-					}
-					else
-					{
-						// orientate second bridge skin at 90 deg to first
-						skin_angle = angle + 90;
-					}
-					break;
-
-				case 3:
-					// orientate third bridge skin at 135 (same result as -45) deg to first
-					skin_angle = angle + 135;
-					break;
-				}
-			}
-			pattern = EFillMethod::LINES; // force lines pattern when bridging
-			if (bridge_settings_enabled)
-			{
-				skin_config = config;
-				skin_overlap = more_skin_overlap;
-				skin_density = density;
-			}*/
 			return true;
 		}
 
@@ -3027,15 +2991,17 @@ void FffGcodeWriter::processPerimeterGaps(const SliceDataStorage& storage, Layer
     const coord_t perimeter_gaps_line_width = perimeter_gap_config.getLineWidth();
 
     assert(mesh.roofing_angles.size() > 0);
-    const bool zig_zaggify_infill = false;
-    const bool connect_polygons = false; // not applicable
+
     int perimeter_gaps_angle = mesh.roofing_angles[gcode_layer.getLayerNr() % mesh.roofing_angles.size()]; // use roofing angles for perimeter gaps
     Polygons gap_polygons; // will remain empty
     Polygons gap_lines;
     constexpr int offset = 0;
     constexpr int infill_multiplier = 1;
     constexpr int extra_infill_shift = 0;
-    const coord_t skin_overlap = mesh.settings.get<coord_t>("skin_overlap_mm");
+    EFillMethod pattern = mesh.settings.get<EFillMethod>("perimeter_gaps_pattern");
+    const bool zig_zaggify_infill = pattern == EFillMethod::ZIG_ZAG;
+    const bool connect_polygons = false; // not applicable
+    const coord_t skin_overlap = mesh.settings.get<coord_t>("skin_gaps_overlap_mm");
     constexpr int wall_line_count = 0;
     const Point& infill_origin = Point();
     constexpr Polygons* perimeter_gaps_polyons = nullptr;
@@ -3046,15 +3012,26 @@ void FffGcodeWriter::processPerimeterGaps(const SliceDataStorage& storage, Layer
     constexpr coord_t pocket_size = 0;
 
     Infill infill_comp(
-        EFillMethod::LINES, zig_zaggify_infill, connect_polygons, perimeter_gaps, offset, perimeter_gaps_line_width, perimeter_gaps_line_width, skin_overlap, infill_multiplier, perimeter_gaps_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
+        pattern, zig_zaggify_infill, connect_polygons, perimeter_gaps, offset, perimeter_gaps_line_width, perimeter_gaps_line_width, skin_overlap, infill_multiplier, perimeter_gaps_angle, gcode_layer.z, gcode_layer.getLayerNr(), extra_infill_shift,
         wall_line_count, infill_origin, perimeter_gaps_polyons, connected_zigzags, use_endpieces, skip_some_zags, zag_skip_count, pocket_size);
     infill_comp.generate(gap_polygons, gap_lines);
-    if (gap_lines.size() > 0)
+
+    if (gap_polygons.size() > 0 || gap_lines.size() > 0)
     {
         added_something = true;
         setExtruder_addPrime(storage, gcode_layer, extruder_nr);
         gcode_layer.setIsInside(true); // going to print stuff inside print object
-        gcode_layer.addLinesByOptimizer(gap_lines, perimeter_gap_config, SpaceFillType::Lines);
+
+        if (!gap_polygons.empty())
+        {
+            constexpr bool force_comb_retract = false;
+            gcode_layer.addTravel(gap_polygons[0][0], force_comb_retract);
+            gcode_layer.addPolygonsByOptimizer(gap_polygons, perimeter_gap_config);
+        }
+        if (gap_lines.size() > 0)
+        {
+            gcode_layer.addLinesByOptimizer(gap_lines, perimeter_gap_config, SpaceFillType::Lines);
+        }
     }
 }
 
@@ -3073,56 +3050,53 @@ bool FffGcodeWriter::processIroning(const SliceMeshStorage& mesh, const SliceLay
 
 bool FffGcodeWriter::addSupportToGCode(const SliceDataStorage& storage, LayerPlan& gcode_layer, const size_t extruder_nr) const
 {
-    bool support_added = false;
-    if (!storage.support.generated || gcode_layer.getLayerNr() > storage.support.layer_nr_max_filled_layer)
-    {
-        return support_added;
-    }
+	bool support_added = false;
+	if (!storage.support.generated || gcode_layer.getLayerNr() > storage.support.layer_nr_max_filled_layer)
+	{
+		return support_added;
+	}
 
-    const Settings& mesh_group_settings = Application::getInstance().current_slice->scene.current_mesh_group->settings;
-    const size_t support_roof_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_roof_extruder_nr").extruder_nr;
-    const size_t support_under_roof_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_under_roof_extruder_nr").extruder_nr;
-    const size_t support_above_bottom_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_above_bottom_extruder_nr").extruder_nr;
-    const size_t support_bottom_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_bottom_extruder_nr").extruder_nr;
-    size_t support_infill_extruder_nr = (gcode_layer.getLayerNr() <= 0) ? mesh_group_settings.get<ExtruderTrain&>("support_extruder_nr_layer_0").extruder_nr : mesh_group_settings.get<ExtruderTrain&>("support_infill_extruder_nr").extruder_nr;
+	const Settings& mesh_group_settings = Application::getInstance().current_slice->scene.current_mesh_group->settings;
+	const size_t support_roof_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_roof_extruder_nr").extruder_nr;
+	const size_t support_under_roof_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_under_roof_extruder_nr").extruder_nr;
+	const size_t support_above_bottom_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_above_bottom_extruder_nr").extruder_nr;
+	const size_t support_bottom_extruder_nr = mesh_group_settings.get<ExtruderTrain&>("support_bottom_extruder_nr").extruder_nr;
+	size_t support_infill_extruder_nr = (gcode_layer.getLayerNr() <= 0) ? mesh_group_settings.get<ExtruderTrain&>("support_extruder_nr_layer_0").extruder_nr : mesh_group_settings.get<ExtruderTrain&>("support_infill_extruder_nr").extruder_nr;
 
-    const SupportLayer& support_layer = storage.support.supportLayers[std::max(0, gcode_layer.getLayerNr())];
-    if (support_layer.support_bottom.empty() 
-        && support_layer.support_roof.empty()
-        && support_layer.support_above_bottom.empty()
-        && support_layer.support_under_roof.empty()
-        && support_layer.support_infill_parts.empty())
-    {
-        return support_added;
-    }
+	const SupportLayer& support_layer = storage.support.supportLayers[std::max(0, gcode_layer.getLayerNr())];
+	if (support_layer.support_bottom.empty()
+		&& support_layer.support_roof.empty()
+		&& support_layer.support_above_bottom.empty()
+		&& support_layer.support_under_roof.empty()
+		&& support_layer.support_infill_parts.empty())
+	{
+		return support_added;
+	}
 
-    EGCodeFlavor flavor = mesh_group_settings.get<EGCodeFlavor>("machine_gcode_flavor");
-    if (flavor == EGCodeFlavor::PICASO)
-    {
-        setExtruder_picaso(storage, gcode_layer, extruder_nr);
-    }
+	if (extruder_nr == support_bottom_extruder_nr)
+	{
+		support_added |= addSupportBottomsToGCode(storage, gcode_layer);
+	}
+	if (extruder_nr == support_above_bottom_extruder_nr)
+	{
+		support_added |= addSupportAboveBottomsToGCode(storage, gcode_layer);
+	}
 
-    if (extruder_nr == support_infill_extruder_nr)
-    {
-        support_added |= processSupportInfill(storage, gcode_layer);
-    }
-    if (extruder_nr == support_under_roof_extruder_nr)
-    {
-        support_added |= addSupportUnderRoofsToGCode(storage, gcode_layer);
-    }
-    if (extruder_nr == support_above_bottom_extruder_nr)
-    {
-        support_added |= addSupportAboveBottomsToGCode(storage, gcode_layer);
-    }
-    if (extruder_nr == support_roof_extruder_nr)
-    {
-        support_added |= addSupportRoofsToGCode(storage, gcode_layer);
-    }
-    if (extruder_nr == support_bottom_extruder_nr)
-    {
-        support_added |= addSupportBottomsToGCode(storage, gcode_layer);
-    }
-    return support_added;
+	if (extruder_nr == support_roof_extruder_nr)
+	{
+		support_added |= addSupportRoofsToGCode(storage, gcode_layer);
+	}
+	if (extruder_nr == support_under_roof_extruder_nr)
+	{
+		support_added |= addSupportUnderRoofsToGCode(storage, gcode_layer);
+	}
+
+	if (extruder_nr == support_infill_extruder_nr)
+	{
+		support_added |= processSupportInfill(storage, gcode_layer);
+	}
+
+	return support_added;
 }
 
 
@@ -3713,9 +3687,22 @@ void FffGcodeWriter::setExtruder_picaso(const SliceDataStorage& storage, LayerPl
 
 void FffGcodeWriter::setExtruder_addPrime(const SliceDataStorage& storage, LayerPlan& gcode_layer, const size_t extruder_nr) const
 {
-    const size_t outermost_prime_tower_extruder = storage.primeTower.extruder_order[0];
+	const Settings& scene_settings = Application::getInstance().current_slice->scene.settings;
+	const EGCodeFlavor flavor = scene_settings.get<EGCodeFlavor>("machine_gcode_flavor");
 
+    const size_t outermost_prime_tower_extruder = storage.primeTower.extruder_order[0];
     const size_t previous_extruder = gcode_layer.getExtruder();
+
+	if (flavor == EGCodeFlavor::PICASO)
+	{
+		if (previous_extruder == extruder_nr) 
+		{
+			return; 
+		}
+		gcode_layer.setExtruder(extruder_nr);
+		return;
+	}
+
     if (previous_extruder == extruder_nr && !(extruder_nr == outermost_prime_tower_extruder
             && gcode_layer.getLayerNr() >= -static_cast<LayerIndex>(Raft::getFillerLayerCount()))) //No unnecessary switches, unless switching to extruder for the outer shell of the prime tower.
     {

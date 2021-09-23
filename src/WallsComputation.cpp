@@ -87,6 +87,7 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
         const size_t inset_part_count = part->insets[i].size();
         constexpr size_t minimum_part_saving = 3; //Only try if the part has more pieces than the previous inset and saves at least this many parts.
         constexpr coord_t try_smaller = 10; //How many micrometres to inset with the try with a smaller inset.
+
         if (inset_part_count > minimum_part_saving + 1 && (i == 0 || (i > 0 && inset_part_count > part->insets[i - 1].size() + minimum_part_saving)))
         {
             //Try a different line thickness and see if this fits better, based on these criteria:
