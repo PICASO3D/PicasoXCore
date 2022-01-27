@@ -1,5 +1,5 @@
-//Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <algorithm>
@@ -32,6 +32,7 @@
 #include "WallsComputation.h"
 #include "infill/DensityProvider.h"
 #include "infill/ImageBasedDensityProvider.h"
+#include "infill/LightningGenerator.h"
 #include "infill/SierpinskiFillProvider.h"
 #include "infill/SubDivCube.h"
 #include "infill/UniformDensityProvider.h"
@@ -40,7 +41,7 @@
 #include "progress/ProgressEstimatorLinear.h"
 #include "progress/ProgressStageEstimator.h"
 #include "settings/AdaptiveLayerHeights.h"
-#include "settings/types/AngleRadians.h"
+#include "settings/types/Angle.h"
 #include "settings/types/LayerIndex.h"
 #include "utils/algorithm.h"
 #include "utils/gettime.h"
@@ -132,7 +133,51 @@ bool FffPolygonGenerator::sliceModel(MeshGroup* meshgroup, TimeKeeper& timeKeepe
     }
     else
     {
-        slice_layer_count = (storage.model_max.z - initial_layer_thickness) / layer_thickness + 1;
+        //Find highest layer count according to each mesh's settings.
+        for (const Mesh& mesh : meshgroup->meshes)
+        {
+            const coord_t mesh_height = mesh.max().z;
+            switch (mesh.settings.get<SlicingTolerance>("slicing_tolerance"))
+            {
+            case SlicingTolerance::MIDDLE:
+                if (storage.model_max.z < initial_layer_thickness)
+                {
+                    slice_layer_count = std::max(slice_layer_count, (mesh_height > initial_layer_thickness / 2) ? 1 : 0); //One layer if higher than half initial layer height.
+                }
+                else
+                {
+                    slice_layer_count = std::max(slice_layer_count, static_cast<int>(round_divide_signed(mesh_height - initial_layer_thickness, layer_thickness) + 1));
+                }
+                break;
+            case SlicingTolerance::EXCLUSIVE:
+            {
+                int new_slice_layer_count = 0;
+                if (mesh_height >= initial_layer_thickness) //If less than the initial layer thickness, leave it at 0.
+                {
+                    new_slice_layer_count = static_cast<int>(floor_divide_signed(mesh_height - 1 - initial_layer_thickness, layer_thickness) + 1);
+                }
+                if (new_slice_layer_count > 0) // If there is at least one layer already, then...
+                {
+                    new_slice_layer_count += 1; // ... need one extra, since we clear the top layer after the repeated intersections with the layer above.
+                }
+                slice_layer_count = std::max(slice_layer_count, new_slice_layer_count);
+                break;
+            }
+            case SlicingTolerance::INCLUSIVE:
+                if (mesh_height < initial_layer_thickness)
+                {
+                    slice_layer_count = std::max(slice_layer_count, (mesh_height > 0) ? 1 : 0); //If less than the initial layer height, it always has 1 layer unless the height is truly zero.
+                }
+                else
+                {
+                    slice_layer_count = std::max(slice_layer_count, static_cast<int>(ceil_divide_signed(mesh_height - initial_layer_thickness, layer_thickness) + 1));
+                }
+                break;
+            default:
+                logError("Unknown slicing tolerance. Did you forget to add a case here?");
+                return false;
+            }
+        }
     }
 
     // Model is shallower than layer_height_0, so not even the first layer is sliced. Return an empty model then.
@@ -652,8 +697,7 @@ void FffPolygonGenerator::processPerimeterGaps(SliceDataStorage& storage)
                         // we print them as a perimeter gap
                         inner = inner.offset(-skin_line_width / 2).offset(skin_line_width / 2);
                     }
-                    inner.add(part.infill_area.offset(-infill_line_width / 2).offset(infill_line_width / 2));
-                    inner = inner.unionPolygons();
+                    inner = inner.unionPolygons(part.infill_area);
                     part.perimeter_gaps.add(outer.difference(inner));
 
                     if (filter_out_tiny_gaps) {
@@ -819,6 +863,13 @@ void FffPolygonGenerator::processDerivedWallsSkinInfill(SliceMeshStorage& mesh)
             }
             mesh.cross_fill_provider = new SierpinskiFillProvider(mesh.bounding_box, mesh.settings.get<coord_t>("infill_line_distance"), mesh.settings.get<coord_t>("infill_line_width"));
         }
+    }
+
+    // Pre-compute lightning fill (aka minfill, aka ribbed support vaults)
+    if (mesh.settings.get<coord_t>("infill_line_distance") > 0 && mesh.settings.get<EFillMethod>("infill_pattern") == EFillMethod::LIGHTNING)
+    {
+        // TODO: Make all of these into new type pointers (but the cross fill things need to happen too then, otherwise it'd just look weird).
+        mesh.lightning_generator = new LightningGenerator(mesh);
     }
 
     // combine infill
@@ -1160,14 +1211,14 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
     const coord_t avg_dist_between_points = mesh.settings.get<coord_t>("magic_fuzzy_skin_point_dist");
     const coord_t min_dist_between_points = avg_dist_between_points * 3 / 4; // hardcoded: the point distance may vary between 3/4 and 5/4 the supplied value
     const coord_t range_random_point_dist = avg_dist_between_points / 2;
-    unsigned int start_layer_nr = (mesh.settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::BRIM)? 1 : 0; // don't make fuzzy skin on first layer if there's a brim
+    unsigned int start_layer_nr = (mesh.settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::BRIM) ? 1 : 0; // don't make fuzzy skin on first layer if there's a brim
     for (unsigned int layer_nr = start_layer_nr; layer_nr < mesh.layers.size(); layer_nr++)
     {
         SliceLayer& layer = mesh.layers[layer_nr];
         for (SliceLayerPart& part : layer.parts)
         {
             Polygons results;
-            Polygons& skin = (mesh.settings.get<ESurfaceMode>("magic_mesh_surface_mode") == ESurfaceMode::SURFACE)? part.outline : part.insets[0];
+            Polygons& skin = (mesh.settings.get<ESurfaceMode>("magic_mesh_surface_mode") == ESurfaceMode::SURFACE) ? part.outline : part.insets[0];
             for (PolygonRef poly : skin)
             {
                 if (mesh.settings.get<bool>("magic_fuzzy_skin_outside_only") && poly.area() < 0)
@@ -1177,25 +1228,27 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
                 }
                 // generate points in between p0 and p1
                 PolygonRef result = results.newPoly();
-
                 int64_t dist_left_over = rand() % (min_dist_between_points / 2); // the distance to be traversed on the line before making the first new point
                 Point* p0 = &poly.back();
                 for (Point& p1 : poly)
                 { // 'a' is the (next) new point between p0 and p1
                     Point p0p1 = p1 - *p0;
                     int64_t p0p1_size = vSize(p0p1);
-                    int64_t dist_last_point = dist_left_over + p0p1_size * 2; // so that p0p1_size - dist_last_point evaulates to dist_left_over - p0p1_size
-                    for (int64_t p0pa_dist = dist_left_over; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + rand() % range_random_point_dist)
+                    int64_t p0pa_dist = dist_left_over;
+                    if (p0pa_dist >= p0p1_size)
+                    {
+                        result.add(p1 - (p0p1 / 2));
+                    }
+                    for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + rand() % range_random_point_dist)
                     {
                         int r = rand() % (fuzziness * 2) - fuzziness;
                         Point perp_to_p0p1 = turn90CCW(p0p1);
                         Point fuzz = normal(perp_to_p0p1, r);
                         Point pa = *p0 + normal(p0p1, p0pa_dist) + fuzz;
                         result.add(pa);
-                        dist_last_point = p0pa_dist;
                     }
-                    dist_left_over = p0p1_size - dist_last_point;
-
+                    // p0pa_dist > p0p1_size now because we broke out of the for-loop
+                    dist_left_over = p0pa_dist - p0p1_size;
                     p0 = &p1;
                 }
                 while (result.size() < 3)

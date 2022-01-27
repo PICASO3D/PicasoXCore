@@ -1,5 +1,5 @@
-//Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <cmath> //For M_PI.
@@ -12,8 +12,7 @@
 #include "../src/settings/FlowTempGraph.h"
 #include "../src/settings/Settings.h" //The class under test.
 #include "../src/settings/types/LayerIndex.h"
-#include "../src/settings/types/AngleRadians.h"
-#include "../src/settings/types/AngleDegrees.h"
+#include "../src/settings/types/Angle.h"
 #include "../src/settings/types/Temperature.h"
 #include "../src/settings/types/Velocity.h"
 #include "../src/settings/types/Ratio.h"

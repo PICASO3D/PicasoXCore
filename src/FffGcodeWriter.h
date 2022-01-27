@@ -1,21 +1,17 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef GCODE_WRITER_H
 #define GCODE_WRITER_H
 
 #include <fstream>
+#include <optional>
 #include "FanSpeedLayerTime.h"
 #include "gcodeExport.h"
 #include "LayerPlanBuffer.h"
 #include "settings/PathConfigStorage.h" //For the MeshPathConfigs subclass.
 #include "utils/NoCopy.h"
-
-namespace std
-{
-template<typename T> class optional;
-}
 
 namespace cura 
 {
@@ -311,17 +307,26 @@ private:
      * Calculate in which order to plan the extruders for each layer
      * Store the order of extruders for each layer in extruder_order_per_layer for normal layers
      * and the order of extruders for raft/filler layers in extruder_order_per_layer_negative_layers.
-     * 
+     *
      * Only extruders which are (most probably) going to be used are planned
-     * 
+     *
      * \note At the planning stage we only have information on areas, not how those are filled.
      * If an area is too small to be filled with anything it will still get specified as being used with the extruder for that area.
-     * 
-     * Computes \ref FffGcodeWriter::extruder_prime_layer_nr, \ref FffGcodeWriter::extruder_order_per_layer and \ref FffGcodeWriter::extruder_order_per_layer_negative_layers
-     * 
+     *
+     * Computes \ref FffGcodeWriter::extruder_order_per_layer and \ref FffGcodeWriter::extruder_order_per_layer_negative_layers
+     *
      * \param[in] storage where the slice data is stored.
      */
     void calculateExtruderOrderPerLayer(const SliceDataStorage& storage);
+
+    /*!
+     * Calculate on which layer we should be priming for each extruder.
+     *
+     * The extruders are primed on the lowest layer at which they are used.
+     * \param storage Slice data storage containing information on which layers
+     * each extruder is used.
+     */
+    void calculatePrimeLayerPerExtruder(const SliceDataStorage& storage);
 
     /*!
      * Gets a list of extruders that are used on the given layer, but excluding the given starting extruder.
@@ -599,11 +604,13 @@ private:
      * \param skin_angle the angle to use for linear infill types
      * \param skin_overlap The amount by which to expand the \p area
      * \param skin density Sets the density of the the skin lines by adjusting the distance between them (normal skin is 1.0)
+     * \param monotonic Whether to order lines monotonically (``true``) or to
+     * minimise travel moves (``false``).
      * \param[out] perimeter_gaps_output Optional output to store the gaps which occur if the pattern is concentric
      * \param[out] added_something Whether this function added anything to the layer plan
      * \param fan_speed fan speed override for this skin area
      */
-    void processSkinPrintFeature(const SliceDataStorage& storage, LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const size_t extruder_nr, const Polygons& area, const GCodePathConfig& config, EFillMethod pattern, const AngleDegrees skin_angle, const coord_t skin_overlap, const Ratio skin_density, Polygons* perimeter_gaps_output, bool& added_something, double fan_speed = GCodePathConfig::FAN_SPEED_DEFAULT) const;
+    void processSkinPrintFeature(const SliceDataStorage& storage, LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const size_t extruder_nr, const Polygons& area, const GCodePathConfig& config, EFillMethod pattern, const AngleDegrees skin_angle, const coord_t skin_overlap, const Ratio skin_density, const bool monotonic, Polygons* perimeter_gaps_output, bool& added_something, double fan_speed = GCodePathConfig::FAN_SPEED_DEFAULT) const;
 
     /*!
      * Add perimeter gaps of a mesh with the given extruder.
@@ -742,7 +749,7 @@ private:
      * \param gcodeLayer The initial planning of the gcode of the layer.
      * \param prev_extruder The current extruder with which we last printed.
      */
-    void addPrimeTower(const SliceDataStorage& storage, LayerPlan& gcodeLayer, int prev_extruder) const;
+    void addPrimeTower(const SliceDataStorage& storage, LayerPlan& gcodeLayer, const size_t prev_extruder) const;
     
     /*!
      * Add the end gcode and set all temperatures to zero.
@@ -765,6 +772,25 @@ private:
      * \return layer seam vertex index
      */
     unsigned int findSpiralizedLayerSeamVertexIndex(const SliceDataStorage& storage, const SliceMeshStorage& mesh, const int layer_nr, const int last_layer_nr);
+
+    /*!
+     * Partition the Infill regions by the skin at N layers above.
+     *
+     * When skin edge support layers is set this function will check N layers above the infill layer to see if there is
+     * skin above. If this skin needs to be supported by a wall it will return true else it returns false. The Infill
+     * outline of the Sparse density layer is partitioned into two polygons, either below the skin regions or outside
+     * of the skin region.
+     *
+     * \param infill_below_skin [out] Polygons with infill below the skin
+     * \param infill_not_below_skin [out] Polygons with infill outside of skin regions above
+     * \param gcode_layer The initial planning of the gcode of the layer
+     * \param mesh the mesh containing the layer of interest
+     * \param part \param part The part for which to create gcode
+     * \param infill_line_width line width of the infill
+     * \return true if there needs to be a skin edge support wall in this layer, otherwise false
+     */
+    static bool partitionInfillBySkinAbove(Polygons& infill_below_skin, Polygons& infill_not_below_skin, const LayerPlan& gcode_layer, const SliceMeshStorage& mesh, const SliceLayerPart& part, coord_t infill_line_width);
+
 };
 
 }//namespace cura

@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "layerPart.h"
@@ -56,15 +56,15 @@ void createLayerWithParts(const Settings& settings, SliceLayer& storageLayer, Sl
         result = layer->polygons.splitIntoParts(union_layers || union_all_remove_holes);
     }
     const coord_t hole_offset = settings.get<coord_t>("hole_xy_offset");
-    for(unsigned int i=0; i<result.size(); i++)
+    for (auto & part : result)
     {
         storageLayer.parts.emplace_back();
         if (hole_offset != 0)
         {
             // holes are to be expanded or shrunk
-            PolygonsPart outline;
+            Polygons outline;
             Polygons holes;
-            for (const PolygonRef poly : result[i])
+            for (const PolygonRef poly : part)
             {
                 if (poly.orientation())
                 {
@@ -75,18 +75,17 @@ void createLayerWithParts(const Settings& settings, SliceLayer& storageLayer, Sl
                     holes.add(poly.offset(hole_offset));
                 }
             }
-            for (PolygonRef hole : holes.unionPolygons().intersection(outline))
-            {
-                hole.reverse();
-                outline.add(hole);
-            }
-            storageLayer.parts[i].outline = outline;
+            storageLayer.parts.back().outline.add(outline.difference(holes.unionPolygons()));
         }
         else
         {
-            storageLayer.parts[i].outline = result[i];
+            storageLayer.parts.back().outline = part;
         }
-        storageLayer.parts[i].boundaryBox.calculate(storageLayer.parts[i].outline);
+        storageLayer.parts.back().boundaryBox.calculate(storageLayer.parts.back().outline);
+        if (storageLayer.parts.back().outline.empty())
+        {
+            storageLayer.parts.pop_back();
+        }
     }
 }
 void createLayerParts(SliceMeshStorage& mesh, Slicer* slicer)

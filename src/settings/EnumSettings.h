@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef SETTINGSBASEVIRTUAL_H
@@ -28,6 +28,7 @@ enum class EFillMethod
     CROSS,
     CROSS_3D,
     GYROID,
+    LIGHTNING,
     HONEYCOMB_FULL,
     HONEYCOMB_SIMPLE,
     NONE  // NOTE: Should remain last! (May be used in testing to enumarate the enum.)
@@ -119,6 +120,7 @@ enum class CombingMode
     OFF,
     ALL,
     NO_SKIN,
+    NO_OUTER_SURFACES,
     INFILL
 };
 

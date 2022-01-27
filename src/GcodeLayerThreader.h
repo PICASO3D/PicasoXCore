@@ -1,4 +1,4 @@
-/** Copyright (C) 2017 Ultimaker - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2017 Ultimaker - Copyright (c) 2022 PICASO 3D - Released under terms of the AGPLv3 License */
 #ifndef GCODE_LAYER_THREADER_H
 #define GCODE_LAYER_THREADER_H
 
@@ -6,9 +6,9 @@
 #include <functional> // function
 #include <thread> // sleep
 #include <chrono> // milliseconds
+#include <optional>
 
 #include "utils/logoutput.h"
-#include "utils/optional.h"
 #include "utils/Lock.h"
 
 namespace cura
@@ -186,7 +186,7 @@ namespace cura
 				if (to_be_consumed_item_idx && consume_lock.test_lock())
 				{
 					item_idx = *to_be_consumed_item_idx;
-					to_be_consumed_item_idx = nullptr;
+					to_be_consumed_item_idx = std::nullopt;
 				}
 			}
 			if (item_idx >= 0)

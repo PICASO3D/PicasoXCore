@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <map>
@@ -17,198 +17,6 @@ namespace cura {
 
 constexpr coord_t COINCIDENT_POINT_DISTANCE = 5; // In uM. Points closer than this may be considered overlapping / at the same place
 constexpr coord_t SQUARED_COINCIDENT_POINT_DISTANCE = COINCIDENT_POINT_DISTANCE * COINCIDENT_POINT_DISTANCE;
-
-
-
-/*
-*   c
-*    \
-*     \b
-*   ,-`|
-* d`   |
-*      a
-*/
-bool ZSeamCrossing::FindCrossing_Mode_Normal(const ConstPolygonRef& wall, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside)
-{
-	float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
-	Point d = RotateCustomLeft(pA, pB, angle);
-
-	Point b_d = pB - d;
-	coord_t r_bd = vSize(b_d);
-	if (r_bd == 0)
-	{
-		return false;
-	}
-
-	coord_t mr = 100;
-	// Forward normal
-	const Point pD1 = pB + Point((coord_t)(mr * (float)b_d.X / r_bd), (coord_t)(mr * (float)b_d.Y / r_bd));
-	// Reverse normal
-	const Point pD2 = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
-
-	if (wall.inside(pD1, false) == inside)
-	{
-		mr = point_start_distance;
-		point = pB + Point((coord_t)(mr * (float)b_d.X / r_bd), (coord_t)(mr * (float)b_d.Y / r_bd));
-		return true;
-	}
-
-	if (wall.inside(pD2, false) == inside)
-	{
-		mr = point_finish_distance;
-		point = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
-		return true;
-	}
-
-	return false;
-}
-
-/*
-*   c
-*    \
-*(dbc)\b
-*   ,-`|
-* d`   |
-* (abd)a
-*/
-bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point& point_start, Point& point_end, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside)
-{
-	float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
-	Point d = RotateCustomLeft(pA, pB, angle);
-	//Point d2 = RolAHalfLeft(pC, pB, pA);
-
-	// and also half angle 
-	angle = LinearAlg2D::getAngleLeft(d, pB, pC) / angle_divider;
-	Point dbc = RotateCustomLeft(d, pB, -angle);
-
-	angle = LinearAlg2D::getAngleLeft(pA, pB, d) / angle_divider;
-	Point abd = RotateCustomLeft(d, pB, angle);
-
-	Point b_d = pB - d;
-	Point b_dbc = pB - dbc;
-	Point b_abd = pB - abd;
-
-	coord_t r_bd = vSize(b_d);
-	coord_t r_dbc = vSize(b_dbc);
-	coord_t r_abd = vSize(b_abd);
-
-	if (r_bd == 0 || r_dbc == 0 || r_abd == 0)
-	{
-		return false;
-	}
-
-	coord_t mr = 100;
-	// Forward normal
-	const Point pD1 = pB + Point((coord_t)(mr * (float)b_d.X / r_bd), (coord_t)(mr * (float)b_d.Y / r_bd));
-	// Reverse normal
-	const Point pD2 = pB + Point((coord_t)(-mr * (float)b_d.X / r_bd), (coord_t)(-mr * (float)b_d.Y / r_bd));
-
-	if (wall.inside(pD1, false) == inside)
-	{
-		coord_t mr_start = point_start_distance;
-		coord_t mr_finish = point_finish_distance;
-		point_start = pB + Point((coord_t)(mr_start * (float)b_dbc.X / r_dbc), (coord_t)(mr_start * (float)b_dbc.Y / r_dbc));
-		point_end = pB + Point((coord_t)(mr_finish * (float)b_abd.X / r_abd), (coord_t)(mr_finish * (float)b_abd.Y / r_abd));
-		return true;
-	}
-
-	if (wall.inside(pD2, false) == inside)
-	{
-		coord_t mr_start = point_start_distance;
-		coord_t mr_finish = point_finish_distance;
-		point_start = pB + Point((coord_t)(-mr_start * (float)b_dbc.X / r_dbc), (coord_t)(-mr_start * (float)b_dbc.Y / r_dbc));
-		point_end = pB + Point((coord_t)(-mr_finish * (float)b_abd.X / r_abd), (coord_t)(-mr_finish * (float)b_abd.Y / r_abd));
-		return true;
-	}
-
-	return false;
-}
-
-/*
-*   result
-*    \
-*     \p0
-* angle|
-*      |
-*      p1
-*/
-Point ZSeamCrossing::RotateCustomLeft(const Point& p1, const Point& p0, const float angle)
-{
-	float cos_a = cos(angle);
-	float sin_a = sin(angle);
-	Point ba = p1 - p0;
-	Point result = p0 + Point((coord_t)(cos_a * ba.X + sin_a * ba.Y), (coord_t)(-sin_a * ba.X + cos_a * ba.Y));
-	return result;
-}
-
-bool ZSeamIntersection::FindIntersection(const Point& p1, const Point& p2, int& ind_offset, Point& intersection)
-{
-	// optimization for high-poly mesh
-	const size_t wall_size = wall.size();
-	const size_t count = wall_size > 100 ? 50 : wall_size / 2;
-
-	for (size_t offset = 0; offset < count; offset++)
-	{
-		// positive direction
-		const Point& pA = wall[(wall_size + start_idx + offset - 1) % wall_size];
-		const Point& pB = wall[(wall_size + start_idx + offset) % wall_size];
-
-		if (ZSeamIntersection::FindIntersection(p1, p2, pA, pB, intersection))
-		{
-			ind_offset = offset;
-			return true;
-		}
-
-		if (offset > 0)
-		{
-			// negative direction
-			const Point& pA = wall[(wall_size + start_idx - offset - 1) % wall_size];
-			const Point& pB = wall[(wall_size + start_idx - offset) % wall_size];
-
-			if (ZSeamIntersection::FindIntersection(p1, p2, pA, pB, intersection))
-			{
-				ind_offset = -offset;
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-/*
-* Find intersection of 2 lines
-*/
-bool ZSeamIntersection::FindIntersection(const Point& start1, const Point& end1, const Point& start2, const Point& end2, Point& intersection)
-{
-	Point dir1 = end1 - start1;
-	Point dir2 = end2 - start2;
-
-	coord_t a1 = -dir1.Y;
-	coord_t b1 = +dir1.X;
-	coord_t d1 = -(a1 * start1.X + b1 * start1.Y);
-
-	coord_t a2 = -dir2.Y;
-	coord_t b2 = +dir2.X;
-	coord_t d2 = -(a2 * start2.X + b2 * start2.Y);
-
-	float seg1_line2_start = a2 * start1.X + b2 * start1.Y + d2;
-	float seg1_line2_end = a2 * end1.X + b2 * end1.Y + d2;
-
-	float seg2_line1_start = a1 * start2.X + b1 * start2.Y + d1;
-	float seg2_line1_end = a1 * end2.X + b1 * end2.Y + d1;
-
-	//no intersection
-	if (seg1_line2_start * seg1_line2_end >= 0 || seg2_line1_start * seg2_line1_end >= 0)
-		return false;
-
-	float u = seg1_line2_start / (seg1_line2_start - seg1_line2_end);
-
-	intersection = start1 + u * dir1;
-
-	return true;
-}
-
 
 /**
 *
@@ -341,22 +149,46 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
 {
     ConstPolygonRef poly = *polygons[poly_idx];
 
-    int best_point_idx = -1;
-	float best_point_score = std::numeric_limits<float>::infinity();
-    Point p0 = poly.back();
+    // Find most extreme point in one direction*. For the 'actual loop' (see below), start from this point,
+    // so it can act as a 'tie breaker' if all differences in dist-score for a polygon fall within epsilon.
+    // *) Direction/point should be equal to user-specified point if available, should be an arbitrary point outside of the BP otherwise.
+    constexpr coord_t E_PSILON = 25; // = 5^2 square micron
+    unsigned int start_from_pos = 0;
+    const Point focus_fixed_point =
+        (config.type == EZSeamType::USER_SPECIFIED) ?
+        config.pos :
+        Point(0, std::sqrt(std::numeric_limits<coord_t>::max()));  // NOTE: Use sqrt, so the squared size can be used when comparing distances.
+    coord_t smallest_dist_sqd = std::numeric_limits<coord_t>::max();
     for (unsigned int point_idx = 0; point_idx < poly.size(); point_idx++)
     {
+        const coord_t dist_sqd = vSize2(focus_fixed_point - poly[point_idx]);
+        if (dist_sqd < smallest_dist_sqd)
+        {
+            start_from_pos = point_idx;
+            smallest_dist_sqd = dist_sqd;
+        }
+    }
+    const unsigned int end_before_pos = poly.size() + start_from_pos;
+
+    // Loop over the polygon to find the 'best' index given all the parameters.
+    int best_point_idx = -1;
+	float best_point_score = std::numeric_limits<float>::infinity();
+    Point p0 = poly[(start_from_pos - 1 + poly.size()) % poly.size()];
+    for (unsigned int point_idx_without_modulo = start_from_pos; point_idx_without_modulo < end_before_pos; point_idx_without_modulo++)
+    {
+        const unsigned int point_idx = point_idx_without_modulo % poly.size();
+
         const Point& p1 = poly[point_idx];
         const Point& p2 = poly[(point_idx + 1) % poly.size()];
         // when type is SHARPEST_CORNER, actual distance is ignored, we use a fixed distance and decision is based on curvature only
-        float dist_score = (config.type == EZSeamType::SHARPEST_CORNER && config.corner_pref != EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE)? 10000 : vSize2f(p1 - prev_point);
+        float dist_score = (config.type == EZSeamType::SHARPEST_CORNER && config.corner_pref != EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE)? MM2INT(10) : vSize2f(p1 - prev_point);
         const float corner_angle = LinearAlg2D::getAngleLeft(p0, p1, p2) / M_PI; // 0 -> 2
 		float corner_shift;
         if (config.type == EZSeamType::SHORTEST)
         {
             // the more a corner satisfies our criteria, the closer it appears to be
             // shift 10mm for a very acute corner
-            corner_shift = 10000 * 10000;
+            corner_shift = MM2INT(10) * MM2INT(10);
         }
         else
         {
@@ -369,7 +201,7 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
 		switch (config.corner_pref)
 		{
 		case EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_INNER:
-			if (corner_angle > 1)
+            if (corner_angle > 1) //Is an inner corner.
 			{
 				// p1 lies on a concave curve so reduce the distance to favour it
 				// the more concave the curve, the more we reduce the distance
@@ -377,7 +209,7 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
 			}
 			break;
 		case EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_OUTER:
-			if (corner_angle < 1)
+            if (corner_angle < 1) //Is an outer corner.
 			{
 				// p1 lies on a convex curve so reduce the distance to favour it
 				// the more convex the curve, the more we reduce the distance
@@ -392,7 +224,7 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
             {
                 //More curve is better score (reduced distance), but slightly in favour of concave curves.
                 float dist_score_corner = fabs(corner_angle - 1) * corner_shift;
-                if (corner_angle < 1)
+                if (corner_angle > 1) //Is an inner corner.
                 {
                     dist_score_corner *= 2;
                 }
@@ -405,7 +237,7 @@ int PathOrderOptimizer::getClosestPointInPolygon(Point prev_point, int poly_idx,
 			// do nothing
 			break;
 		}
-        if (dist_score < best_point_score)
+        if ((dist_score - E_PSILON) < best_point_score)
         {
             best_point_idx = point_idx;
             best_point_score = dist_score;
@@ -699,7 +531,7 @@ float LineOrderOptimizer::combingDistance2(const Point &p0, const Point &p1)
     if (loc_to_line == nullptr)
     {
         // do the initialisation required to be able to calculate realistic travel distances to the start of new paths
-        loc_to_line = PolygonUtils::createLocToLineGrid(*combing_boundary, 1000); // 1mm grid to reduce computation time
+        loc_to_line = PolygonUtils::createLocToLineGrid(*combing_boundary, MM2INT(1)); // 1mm grid to reduce computation time
     }
 
     CombPath comb_path;
@@ -717,7 +549,7 @@ float LineOrderOptimizer::combingDistance2(const Point &p0, const Point &p1)
 
     // couldn't comb, fall back to a large distance
 
-    return vSize2f(p1 - p0) * 10000;
+    return vSize2f(p1 - p0) * MM2INT(10);
 }
 
 /*

@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef UTILS_POLYGON_H
@@ -8,7 +8,7 @@
 #include <vector>
 #include <assert.h>
 #include <float.h>
-#include <clipper.hpp>
+#include "clipper.hpp"
 
 #include <algorithm>    // std::reverse, fill_n array
 #include <cmath> // fabs
@@ -18,7 +18,7 @@
 #include <initializer_list>
 
 #include "IntPoint.h"
-#include "../settings/types/AngleDegrees.h" //For angles between vertices.
+#include "../settings/types/Angle.h" //For angles between vertices.
 
 #define CHECK_POLY_ACCESS
 #ifdef CHECK_POLY_ACCESS
@@ -382,6 +382,11 @@ public:
         return (*path)[index];
     }
 
+    const Point& operator[] (const unsigned int& index) const
+    {
+        return path->at(index);
+    }
+
     ClipperLib::Path::iterator begin()
     {
         return path->begin();
@@ -478,7 +483,7 @@ public:
      * \param smallest_line_segment_squared maximal squared length of removed line segments
      * \param allowed_error_distance_squared The square of the distance of the middle point to the line segment of the consecutive and previous point for which the middle point is removed
      */
-    void simplify(const coord_t smallest_line_segment_squared = 100, const coord_t allowed_error_distance_squared = 25);
+    void simplify(const coord_t smallest_line_segment_squared = MM2INT(0.01) * MM2INT(0.01), const coord_t allowed_error_distance_squared = 25);
 
     void pop_back()
     { 
@@ -671,6 +676,12 @@ public:
         }
         paths.resize(paths.size() - 1);
     }
+
+    void pop_back()
+    {
+        paths.pop_back();
+    }
+
     /*!
      * Remove a range of polygons
      */
@@ -750,13 +761,13 @@ public:
         clipper.Execute(ClipperLib::ctDifference, ret.paths);
         return ret;
     }
-    Polygons unionPolygons(const Polygons& other) const
+    Polygons unionPolygons(const Polygons& other, ClipperLib::PolyFillType fill_type = ClipperLib::pftNonZero) const
     {
         Polygons ret;
         ClipperLib::Clipper clipper(clipper_init);
         clipper.AddPaths(paths, ClipperLib::ptSubject, true);
         clipper.AddPaths(other.paths, ClipperLib::ptSubject, true);
-        clipper.Execute(ClipperLib::ctUnion, ret.paths, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+        clipper.Execute(ClipperLib::ctUnion, ret.paths, fill_type, fill_type);
         return ret;
     }
     /*!
@@ -793,6 +804,14 @@ public:
         clipper.AddPaths(other.paths, ClipperLib::ptSubject, false);
         clipper.Execute(ClipperLib::ctIntersection, segment_tree);
     }
+
+
+    /*!
+     * Cut this polygon using an other polygon as a tool
+     * \param tool a closed polygon serving as boundary
+     */
+    Polygons& cut(const Polygons& tool);
+
     Polygons xorPolygons(const Polygons& other) const
     {
         Polygons ret;
@@ -809,8 +828,9 @@ public:
     {
         Polygons ret;
         double miterLimit = 1.2;
+        ClipperLib::EndType end_type = (joinType == ClipperLib::jtMiter) ? ClipperLib::etOpenSquare : ClipperLib::etOpenRound;
         ClipperLib::ClipperOffset clipper(miterLimit, 10.0);
-        clipper.AddPaths(paths, joinType, ClipperLib::etOpenSquare);
+        clipper.AddPaths(paths, joinType, end_type);
         clipper.MiterLimit = miterLimit;
         clipper.Execute(ret.paths, distance);
         return ret;

@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "multiVolumes.h"
@@ -79,6 +79,8 @@ void generateMultipleVolumesOverlap(std::vector<Slicer*> &volumes)
     int offset_to_merge_other_merged_volumes = 20;
     for (Slicer* volume : volumes)
     {
+        ClipperLib::PolyFillType fill_type = volume->mesh->settings.get<bool>("meshfix_union_all") ? ClipperLib::pftNonZero : ClipperLib::pftEvenOdd;
+
         coord_t overlap = volume->mesh->settings.get<coord_t>("multiple_mesh_overlap");
         if (volume->mesh->settings.get<bool>("infill_mesh")
             || volume->mesh->settings.get<bool>("anti_overhang_mesh")
@@ -104,11 +106,11 @@ void generateMultipleVolumesOverlap(std::vector<Slicer*> &volumes)
                     continue;
                 }
                 SlicerLayer& other_volume_layer = other_volume->layers[layer_nr];
-                all_other_volumes = all_other_volumes.unionPolygons(other_volume_layer.polygons.offset(offset_to_merge_other_merged_volumes));
+                all_other_volumes = all_other_volumes.unionPolygons(other_volume_layer.polygons.offset(offset_to_merge_other_merged_volumes), fill_type);
             }
 
             SlicerLayer& volume_layer = volume->layers[layer_nr];
-            volume_layer.polygons = volume_layer.polygons.unionPolygons(all_other_volumes.intersection(volume_layer.polygons.offset(overlap / 2)));
+            volume_layer.polygons = volume_layer.polygons.unionPolygons(all_other_volumes.intersection(volume_layer.polygons.offset(overlap / 2)), fill_type);
         }
     }
 }

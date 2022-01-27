@@ -1,5 +1,5 @@
-//Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <algorithm> //For std::sort.
@@ -12,6 +12,7 @@
 #include "infill/GyroidInfill.h"
 #include "infill/PicasoHoneyCombInfill.h"
 #include "infill/NoZigZagConnectorProcessor.h"
+#include "infill/LightningGenerator.h"
 #include "infill/SierpinskiFill.h"
 #include "infill/SierpinskiFillProvider.h"
 #include "infill/SubDivCube.h"
@@ -42,9 +43,66 @@ static inline int computeScanSegmentIdx(int x, int line_width)
     return x / line_width;
 }
 
-namespace cura {
+namespace cura 
+{
 
-void Infill::generate(Polygons& result_polygons, Polygons& result_lines, const SierpinskiFillProvider* cross_fill_provider, const SliceMeshStorage* mesh)
+    Infill::Infill(EFillMethod pattern
+            , bool zig_zaggify
+            , bool connect_polygons
+            , const Polygons& in_outline
+            , coord_t outline_offset
+            , coord_t infill_line_width
+            , coord_t line_distance
+            , coord_t infill_overlap
+            , size_t infill_multiplier
+            , AngleDegrees fill_angle
+            , coord_t z
+            , int layer_nr
+            , coord_t shift
+            , coord_t max_resolution
+            , coord_t max_deviation
+            , size_t wall_line_count
+            , const Point& infill_origin
+            , Polygons* perimeter_gaps
+            , bool connected_zigzags
+            , bool use_endpieces
+            , bool skip_some_zags
+            , size_t zag_skip_count
+            , coord_t pocket_size
+        )
+        : pattern(pattern)
+        , zig_zaggify(zig_zaggify)
+        , connect_polygons(connect_polygons)
+        , in_outline(in_outline)
+        , outline_offset(outline_offset)
+        , infill_line_width(infill_line_width)
+        , line_distance(line_distance)
+        , infill_overlap(infill_overlap)
+        , infill_multiplier(infill_multiplier)
+        , fill_angle(fill_angle)
+        , z(z)
+        , layer_nr(layer_nr)
+        , shift(shift)
+        , max_resolution(max_resolution)
+        , max_deviation(max_deviation)
+        , wall_line_count(wall_line_count)
+        , infill_origin(infill_origin)
+        , perimeter_gaps(perimeter_gaps)
+        , connected_zigzags(connected_zigzags)
+        , use_endpieces(use_endpieces)
+        , skip_some_zags(skip_some_zags)
+        , zag_skip_count(zag_skip_count)
+        , pocket_size(pocket_size)
+        , mirror_offset(zig_zaggify)
+    {
+    }
+
+void Infill::generate(
+    Polygons& result_polygons, 
+    Polygons& result_lines, 
+    const SierpinskiFillProvider* cross_fill_provider,
+    const LightningLayer* lightning_trees,
+    const SliceMeshStorage* mesh)
 {
     coord_t outline_offset_raw = outline_offset;
     outline_offset -= wall_line_count * infill_line_width; // account for extra walls
@@ -58,7 +116,7 @@ void Infill::generate(Polygons& result_polygons, Polygons& result_lines, const S
         }
         Polygons generated_result_polygons;
         Polygons generated_result_lines;
-        _generate(generated_result_polygons, generated_result_lines, cross_fill_provider, mesh);
+        _generate(generated_result_polygons, generated_result_lines, cross_fill_provider, lightning_trees, mesh);
         zig_zaggify = zig_zaggify_real;
         multiplyInfill(generated_result_polygons, generated_result_lines);
         result_polygons.add(generated_result_polygons);
@@ -70,7 +128,7 @@ void Infill::generate(Polygons& result_polygons, Polygons& result_lines, const S
         //So make sure we provide it with a Polygons that is safe to clear and only add stuff to result_lines.
         Polygons generated_result_polygons;
         Polygons generated_result_lines;
-        _generate(generated_result_polygons, generated_result_lines, cross_fill_provider, mesh);
+        _generate(generated_result_polygons, generated_result_lines, cross_fill_provider, lightning_trees, mesh);
         result_polygons.add(generated_result_polygons);
         result_lines.add(generated_result_lines);
     }
@@ -95,7 +153,12 @@ void Infill::generate(Polygons& result_polygons, Polygons& result_lines, const S
     }
 }
 
-void Infill::_generate(Polygons& result_polygons, Polygons& result_lines, const SierpinskiFillProvider* cross_fill_provider, const SliceMeshStorage* mesh)
+void Infill::_generate(
+    Polygons& result_polygons, 
+    Polygons& result_lines,
+    const SierpinskiFillProvider* cross_fill_provider, 
+    const LightningLayer* lightning_trees,
+    const SliceMeshStorage* mesh)
 {
     if (in_outline.empty()) return;
     if (line_distance == 0) return;
@@ -154,6 +217,10 @@ void Infill::_generate(Polygons& result_polygons, Polygons& result_lines, const 
     case EFillMethod::GYROID:
         generateGyroidInfill(result_lines);
         break;
+    case EFillMethod::LIGHTNING:
+        assert(lightning_trees); // "Cannot generate Lightning infill without a generator!\n"
+        generateLightningInfill(lightning_trees, result_lines);
+        break;
     case EFillMethod::HONEYCOMB_FULL:
         generateHoneyCombInfill(result_lines, *mesh, false);
         break;
@@ -176,6 +243,7 @@ void Infill::_generate(Polygons& result_polygons, Polygons& result_lines, const 
         connectLines(result_lines);
     }
     crossings_on_line.clear();
+    result_polygons.simplify(max_resolution, max_deviation);
 }
 
 void Infill::multiplyInfill(Polygons& result_polygons, Polygons& result_lines)
@@ -271,6 +339,16 @@ void Infill::multiplyInfill(Polygons& result_polygons, Polygons& result_lines)
 void Infill::generateGyroidInfill(Polygons& result_lines)
 {
     GyroidInfill::generateTotalGyroidInfill(result_lines, zig_zaggify, outline_offset + infill_overlap, infill_line_width, line_distance, in_outline, z);
+}
+
+void Infill::generateLightningInfill(const LightningLayer* trees, Polygons& result_lines)
+{
+    // Don't need to support areas smaller than line width, as they are always within radius:
+    if (std::abs(in_outline.area()) < infill_line_width || !trees)
+    {
+        return;
+    }
+    result_lines.add(trees->convertToLines(in_outline, infill_line_width));
 }
 
 void Infill::generateHoneyCombInfill(Polygons& result_lines, const SliceMeshStorage& mesh, bool simple)
@@ -371,7 +449,7 @@ void Infill::generateCubicSubDivInfill(Polygons& result, const SliceMeshStorage&
 {
     Polygons uncropped;
     mesh.base_subdiv_cube->generateSubdivisionLines(z, uncropped);
-    addLineSegmentsInfill(result, uncropped);
+    result = uncropped.cut(in_outline.offset(infill_overlap));
 }
 
 void Infill::generateCrossInfill(const SierpinskiFillProvider& cross_fill_provider, Polygons& result_polygons, Polygons& result_lines)
@@ -412,18 +490,6 @@ void Infill::generateCrossInfill(const SierpinskiFillProvider& cross_fill_provid
                 result_lines.addLine(poly_line[point_idx - 1], poly_line[point_idx]);
             }
         }
-    }
-}
-
-void Infill::addLineSegmentsInfill(Polygons& result, Polygons& input)
-{
-    ClipperLib::PolyTree interior_segments_tree;
-    in_outline.offset(infill_overlap).lineSegmentIntersection(input, interior_segments_tree);
-    ClipperLib::Paths interior_segments;
-    ClipperLib::OpenPathsFromPolyTree(interior_segments_tree, interior_segments);
-    for (size_t idx = 0; idx < interior_segments.size(); idx++)
-    {
-        result.addLine(interior_segments[idx][0], interior_segments[idx][1]);
     }
 }
 

@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef SUPPORT_H
@@ -69,8 +69,10 @@ public:
      * \param outline The given support infill outline.
      * \param inset_count The number of perimeters to surround the support infill outline.
      * \param wall_line_width_x The wall line width in microns on the X axis.
+     * \param max_resolution the intended minimum segment length
+     * \param max_deviation the max deviation between the output poly and the input when trying to enforce the \p max_resolution
      */
-    static void generateOutlineInsets(std::vector<Polygons>& insets, Polygons& outline, const unsigned int inset_count, const coord_t wall_line_width_x);
+    static void generateOutlineInsets(std::vector<Polygons>& insets, Polygons& outline, const unsigned int inset_count, const coord_t wall_line_width_x, const coord_t max_resolution, const coord_t max_deviation);
 
 private:
     /*!

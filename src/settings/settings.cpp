@@ -1,5 +1,5 @@
-//Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <cctype>
@@ -12,8 +12,7 @@
 #include "EnumSettings.h"
 #include "FlowTempGraph.h"
 #include "Settings.h"
-#include "types/AngleDegrees.h" //For angle settings.
-#include "types/AngleRadians.h" //For angle settings.
+#include "types/Angle.h"
 #include "types/Duration.h" //For duration and time settings.
 #include "types/LayerIndex.h" //For layer index settings.
 #include "types/Ratio.h" //For ratio settings and percentages.
@@ -382,6 +381,10 @@ template<> EFillMethod Settings::get<EFillMethod>(const std::string& key) const
     {
         return EFillMethod::GYROID;
     }
+    else if (value == "lightning")
+    {
+        return EFillMethod::LIGHTNING;
+    }
 	else if (value == "honeycomb_full")
 	{
 		return EFillMethod::HONEYCOMB_FULL;
@@ -598,6 +601,10 @@ template<> CombingMode Settings::get<CombingMode>(const std::string& key) const
     else if (value == "noskin")
     {
         return CombingMode::NO_SKIN;
+    }
+    else if (value == "no_outer_surfaces")
+    {
+        return CombingMode::NO_OUTER_SURFACES;
     }
     else if (value == "infill")
     {

@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef SKIN_H
@@ -135,12 +135,31 @@ protected:
     // */
     //void generateRoofing(SliceLayerPart& part);
 
-    ///*!
-    // * Helper function to calculate and return the areas which are 'directly' under air.
-    // *
-    // * \param part Where to get the SkinParts to get the outline info from
-    // */
-    //Polygons generateNoAirAbove(SliceLayerPart& part);
+    /*!
+     * Remove the areas which are directly under air in the top-most surface and directly above air in bottom-most
+     * surfaces from the \ref SkinPart::inner_infill and save them in the \ref SkinPart::bottom_most_surface_fill and
+     * \ref SkinPart::top_most_surface_fill (respectively) of the \p part.
+     *
+     * \param[in,out] part Where to get the SkinParts to get the outline info from and to store the top and bottom-most
+     * infill areas
+     */
+    void generateTopAndBottomMostSkinSurfaces(SliceLayerPart& part);
+
+    /*!
+     * Helper function to calculate and return the areas which are 'directly' under air.
+     *
+     * \param part Where to get the SkinParts to get the outline info from
+     * \param roofing_layer_count The number of layers above the layer which we are looking into
+     */
+    Polygons generateNoAirAbove(SliceLayerPart& part, size_t roofing_layer_count);
+
+    /*!
+     * Helper function to calculate and return the areas which are 'directly' above air.
+     *
+     * \param part Where to get the SkinParts to get the outline info from
+     * \param flooring_layer_count The number of layers below the layer which we are looking into
+     */
+    Polygons generateNoAirBelow(SliceLayerPart& part, size_t flooring_layer_count);
 
     ///*!
     // * Helper function to recalculate the roofing fill and inner infill in roofing layers where the 
@@ -160,21 +179,21 @@ protected:
      */
     void generateSkinInsetsAndInnerSkinInfill(SliceLayerPart* part);
 
-    ///*!
-    // * Generate the skin insets of a skin part
-    // * 
-    // * \param skin_part The part where the skin outline information (input) is stored and
-    // * where the skin insets (output) are stored.
-    // */
-    //void generateSkinInsets(SkinPart& skin_part);
+    /*!
+     * Generate the skin insets of a skin part
+     * 
+     * \param skin_part The part where the skin outline information (input) is stored and
+     * where the skin insets (output) are stored.
+     */
+    void generateSkinInsets(SkinPart& skin_part);
 
-    ///*!
-    // * Generate the inner_infill_area of a skin part
-    // * 
-    // * \param skin_part The part where the skin outline information (input) is stored and
-    // * where the inner infill area (output) is stored.
-    // */
-    //void generateInnerSkinInfill(SkinPart& skin_part);
+    /*!
+     * Generate the inner_infill_area of a skin part
+     * 
+     * \param skin_part The part where the skin outline information (input) is stored and
+     * where the inner infill area (output) is stored.
+     */
+    void generateInnerSkinInfill(SkinPart& skin_part);
 
 	void generateSkinPartOutlines(SliceLayerPart& layer_part, SkinPart& skin_part, const size_t skin_roof_layer_count, const size_t skin_floor_layer_count, const size_t wall_line_count);
 	std::vector<Polygons> generateOutlineInsets(const Polygons& outline, const coord_t line_width, const size_t inset_count);

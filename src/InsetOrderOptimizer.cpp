@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2020 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "ExtruderTrain.h"
@@ -147,7 +147,7 @@ void InsetOrderOptimizer::processHoleInsets()
         start_point = (*inset_polys[0][0])[outer_poly_start_idx];
     }
     Polygons comb_boundary(*gcode_layer.getCombBoundaryInside());
-    comb_boundary.simplify(100, 100);
+    comb_boundary.simplify(MM2INT(0.1), MM2INT(0.1));
     PathOrderOptimizer order_optimizer(start_point, z_seam_config, &comb_boundary);
     for (unsigned int poly_idx = 1; poly_idx < inset_polys[0].size(); poly_idx++)
     {
@@ -297,12 +297,16 @@ void InsetOrderOptimizer::processHoleInsets()
                 const unsigned outer_poly_idx = order_optimizer.polyOrder[outer_poly_order_idx];
                 unsigned outer_poly_start_idx = gcode_layer.locateFirstSupportedVertex(hole_outer_wall[0], order_optimizer.polyStart[outer_poly_idx]);
 
-                // detect special case where where the z-seam is located on the sharpest corner and there is only 1 hole and
+                // detect special case where the z-seam is located on the sharpest corner and there is only 1 hole and
                 // the gap between the walls is just a few line widths
-                if (z_seam_config.type == EZSeamType::SHARPEST_CORNER && inset_polys[0].size() == 2 && PolygonUtils::polygonOutlinesAdjacent(*inset_polys[0][1], *inset_polys[0][0], max_gap * 4))
+                if (z_seam_config.type == EZSeamType::SHARPEST_CORNER && inset_polys[0].size() == 2)
                 {
                     // align z-seam of hole with z-seam of outer wall - makes a nicer job when printing tubes
-                    outer_poly_start_idx = PolygonUtils::findNearestVert(start_point, hole_outer_wall.back());
+                    const size_t aligned_idx = PolygonUtils::findNearestVert(start_point, hole_outer_wall.back());
+                    if (vSize2(hole_outer_wall[0][aligned_idx] - start_point) < max_gap * max_gap * 16) //This aligned position is not too far from the outside.
+                    {
+                        outer_poly_start_idx = aligned_idx;
+                    }
                 }
                 const Point z_seam_location = hole_outer_wall[0][outer_poly_start_idx];
                 // move to the location of the vertex in the outermost enclosing inset that's closest to the z seam location

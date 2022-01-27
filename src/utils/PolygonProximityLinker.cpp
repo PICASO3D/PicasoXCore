@@ -1,4 +1,4 @@
-/** Copyright (C) 2016 Ultimaker - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2016 Ultimaker - Copyright (c) 2022 PICASO 3D - Released under terms of the AGPLv3 License */
 
 #include <cmath> // isfinite
 #include <sstream> // ostream
@@ -376,11 +376,11 @@ void PolygonProximityLinker::addProximityEnding(const ProximityPointLink& link, 
 
 ListPolyIt PolygonProximityLinker::addNewPolyPoint(const Point point, const ListPolyIt line_start, const ListPolyIt line_end, const ListPolyIt before_this)
 {
-    if (point == line_start.p())
+    if (vSize(line_start.p() - point) < proximity_distance)
     {
         return line_start;
     }
-    if (point == line_end.p())
+    if (vSize(line_end.p() - point) < proximity_distance)
     {
         return line_end;
     }

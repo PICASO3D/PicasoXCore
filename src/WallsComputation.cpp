@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "ExtruderTrain.h"
@@ -8,6 +8,8 @@
 #include "settings/types/Ratio.h"
 #include "settings/EnumSettings.h"
 #include "utils/polygonUtils.h"
+#include "Application.h"
+#include "Slice.h"
 
 namespace cura {
 
@@ -120,12 +122,12 @@ void WallsComputation::generateInsets(SliceLayerPart* part)
         }
 
         //Finally optimize all the polygons. Every point removed saves time in the long run.
-        const ExtruderTrain& train_wall = settings.get<ExtruderTrain&>(
-            optimize_wall_printing_order ?
+        int wall_extruder_nr = settings.get<int>( optimize_wall_printing_order ?
             (i == 0 ? "wall_0_extruder_nr" : "wall_x_extruder_nr")
             : (i == 0 ? "wall_0_extruder_nr" : (i == 1 ? "wall_1_extruder_nr" : "wall_x_extruder_nr")));
-        const coord_t maximum_resolution = train_wall.settings.get<coord_t>("meshfix_maximum_resolution");
-        const coord_t maximum_deviation = train_wall.settings.get<coord_t>("meshfix_maximum_deviation");
+        const Settings& resolution_settings = wall_extruder_nr < 0 ? settings : Application::getInstance().current_slice->scene.extruders[wall_extruder_nr].settings;
+        const coord_t maximum_resolution = resolution_settings.get<coord_t>("meshfix_maximum_resolution");
+        const coord_t maximum_deviation = resolution_settings.get<coord_t>("meshfix_maximum_deviation");
         part->insets[i].simplify(maximum_resolution, maximum_deviation);
         part->insets[i].removeDegenerateVerts();
         if (i == 0)

@@ -1,8 +1,8 @@
 #Copyright (c) 2020 Ultimaker B.V.
-#Copyright (c) 2021 PICASO 3D
+#Copyright (c) 2022 PICASO 3D
 #PicasoXCore is released under the terms of the AGPLv3 or higher
 
-cmake_minimum_required(VERSION 3.6.0)
+cmake_minimum_required(VERSION 3.8.0)
 project(PicasoXCore)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -22,6 +22,10 @@ if(ENABLE_ARCUS)
     find_package(Protobuf 3.0.0 REQUIRED)
     find_package(Arcus REQUIRED)
     add_definitions(-DARCUS)
+    find_program(PROTOC "protoc")
+    if(${PROTOC} STREQUAL "PROTOC-NOTFOUND")
+        message(FATAL_ERROR "Protobuf compiler missing")
+    endif()
 endif()
 
 #For reading image files.
@@ -45,7 +49,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE_INIT}")
 endif()
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -146,6 +150,7 @@ set(engine_SRCS # Except main.cpp.
     src/MeshGroup.cpp
     src/Mold.cpp
     src/multiVolumes.cpp
+	src/PathOrder.cpp
     src/pathOrderOptimizer.cpp
     src/Preheat.cpp
     src/PrimeTower.cpp
@@ -174,6 +179,10 @@ set(engine_SRCS # Except main.cpp.
     src/infill/ImageBasedDensityProvider.cpp
     src/infill/NoZigZagConnectorProcessor.cpp
     src/infill/ZigzagConnectorProcessor.cpp
+    src/infill/LightningDistanceField.cpp
+    src/infill/LightningGenerator.cpp
+    src/infill/LightningLayer.cpp
+    src/infill/LightningTreeNode.cpp
     src/infill/SierpinskiFill.cpp
     src/infill/SierpinskiFillProvider.cpp
     src/infill/SubDivCube.cpp
@@ -193,6 +202,7 @@ set(engine_SRCS # Except main.cpp.
     src/settings/FlowTempGraph.cpp
     src/settings/PathConfigStorage.cpp
     src/settings/Settings.cpp
+	src/settings/ZSeamConfig.cpp
 
     src/utils/AABB.cpp
     src/utils/AABB3D.cpp
@@ -214,6 +224,7 @@ set(engine_SRCS # Except main.cpp.
     src/utils/ProximityPointLink.cpp
     src/utils/SVG.cpp
     src/utils/socket.cpp
+    src/utils/SquareGrid.cpp
 )
 
 # List of tests. For each test there must be a file tests/${NAME}.cpp.
@@ -222,9 +233,8 @@ set(engine_TEST
     InfillTest
     LayerPlanTest
     MergeInfillLinesTest
+	PathOrderMonotonicTest
     TimeEstimateCalculatorTest
-)
-set(engine_TEST_INFILL
 )
 set(engine_TEST_INTEGRATION
     SlicePhaseTest

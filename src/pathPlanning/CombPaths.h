@@ -1,4 +1,4 @@
-/** Copyright (C) 2013 Ultimaker - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2013 Ultimaker - Copyright (c) 2022 PICASO 3D - Released under terms of the AGPLv3 License */
 
 #ifndef PATH_PLANNING_COMB_PATHS_H
 #define PATH_PLANNING_COMB_PATHS_H

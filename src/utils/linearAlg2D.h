@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef UTILS_LINEAR_ALG_2D_H
@@ -88,8 +88,16 @@ public:
         const double c1 = a1 * (a.X) + b1 * (a.Y);
         const double c2 = a2 * (c.X) + b2 * (c.Y);
 
-        output.X = (b2 * c1 - b1 * c2) / determinant;
-        output.Y = (a1 * c2 - a2 * c1) / determinant;
+        const Point result((b2 * c1 - b1 * c2) / determinant,
+            (a1 * c1 - a2 * c1) / determinant);
+        if (std::abs(result.X) > std::numeric_limits<int32_t>::max() || std::abs(result.Y) > std::numeric_limits<int32_t>::max())
+        {
+            //Intersection is so far away that it could lead to integer overflows.
+            //Even though the lines aren't 100% parallel, it's better to pretend they are. They are practically parallel.
+            return false;
+        }
+
+        output = result;
         return true;
     }
 

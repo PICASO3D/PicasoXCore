@@ -1,5 +1,5 @@
 //Copyright (c) 2020 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef FLOAT_POINT_H
@@ -84,7 +84,7 @@ public:
 
     Point3 toPoint3()
     {
-        return Point3(x*1000, y*1000, z*1000);
+        return Point3(MM2INT(x), MM2INT(y), MM2INT(z));
     }
 };
 

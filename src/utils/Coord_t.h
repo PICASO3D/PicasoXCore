@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef UTILS_COORD_T_H
@@ -7,7 +7,7 @@
 
 
 //Include Clipper to get the ClipperLib::IntPoint definition, which we reuse as Point definition.
-#include <clipper.hpp>
+#include "clipper.hpp"
 
 namespace cura
 {

@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "GCodePath.h"
@@ -14,6 +14,7 @@ space_fill_type(space_fill_type),
 flow(flow),
 speed_factor(speed_factor),
 retract(false),
+unretract_before_last_travel_move(false),
 perform_z_hop(false),
 perform_prime(false),
 skip_agressive_merge_hint(false),

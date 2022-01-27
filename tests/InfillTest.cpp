@@ -1,5 +1,5 @@
 //Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher.
 
 #include <gtest/gtest.h>
@@ -117,6 +117,8 @@ namespace cura
     const AngleDegrees fill_angle = 0.;
     constexpr coord_t z = 100; // Future improvement: Also take an uneven layer, so we get the alternate.
     constexpr coord_t shift = 0;
+    constexpr coord_t max_resolution = 10;
+    constexpr coord_t max_deviation = 5;
     const std::vector<std::string> polygon_filenames =
     {
         "../tests/resources/polygon_concave.txt",
@@ -165,7 +167,9 @@ namespace cura
             infill_multiplier,
             fill_angle,
             z,
-            shift
+            shift,
+            max_resolution,
+            max_deviation
         ); // There are some optional parameters, but these will do for now (future improvement?).
 
         Polygons result_polygons;
@@ -195,7 +199,7 @@ namespace cura
          *    (these are; Cross, Cross-3D and Cubic-Subdivision)
          *  - Gyroid, since it doesn't handle the 100% infill and related cases well
          */
-        std::vector<EFillMethod> skip_methods = { EFillMethod::CROSS, EFillMethod::CROSS_3D, EFillMethod::CUBICSUBDIV, EFillMethod::GYROID };
+        std::vector<EFillMethod> skip_methods = { EFillMethod::CROSS, EFillMethod::CROSS_3D, EFillMethod::CUBICSUBDIV, EFillMethod::GYROID, EFillMethod::LIGHTNING };
 
         std::vector<EFillMethod> methods;
         for (int i_method = 0; i_method < static_cast<int>(EFillMethod::NONE); ++i_method)

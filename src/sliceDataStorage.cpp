@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2020 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "Application.h" //To get settings.
@@ -8,6 +8,7 @@
 #include "raft.h"
 #include "Slice.h"
 #include "sliceDataStorage.h"
+#include "infill/LightningGenerator.h"
 #include "infill/SierpinskiFillProvider.h"
 #include "infill/SubDivCube.h" // For the destructor
 #include "infill/DensityProvider.h" // for destructor
@@ -167,6 +168,7 @@ SliceMeshStorage::SliceMeshStorage(Mesh* mesh, const size_t slice_layer_count)
 , bounding_box(mesh->getAABB())
 , base_subdiv_cube(nullptr)
 , cross_fill_provider(nullptr)
+, lightning_generator(nullptr)
 {
     layers.resize(slice_layer_count);
 }
@@ -180,6 +182,10 @@ SliceMeshStorage::~SliceMeshStorage()
     if (cross_fill_provider)
     {
         delete cross_fill_provider;
+    }
+    if (lightning_generator)
+    {
+        delete lightning_generator;
     }
 }
 
@@ -223,7 +229,8 @@ bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr) const
 
 	if (settings.get<size_t>("top_layers") > 0 || settings.get<size_t>("bottom_layers") > 0)
 	{
-		if (settings.get<size_t>("roofing_layer_count") > 0 
+        const size_t roofing_layer_count = std::min(settings.get<size_t>("roofing_layer_count"), settings.get<size_t>("top_layers"));
+		if (roofing_layer_count > 0
 			&& settings.get<ExtruderTrain&>("roofing_extruder_nr").extruder_nr == extruder_nr)
 		{
 			return true;
@@ -232,7 +239,8 @@ bool SliceMeshStorage::getExtruderIsUsed(const size_t extruder_nr) const
 		{
 			return true;
 		}
-		if (settings.get<size_t>("flooring_layer_count") > 0 
+        const size_t flooring_layer_count = std::min(settings.get<size_t>("flooring_layer_count"), settings.get<size_t>("bottom_layers"));
+		if (flooring_layer_count > 0
 			&& settings.get<ExtruderTrain&>("flooring_extruder_nr").extruder_nr == extruder_nr)
 		{
 			return true;
@@ -488,8 +496,6 @@ Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const boo
     else 
     {
         Polygons total;
-        coord_t maximum_resolution = std::numeric_limits<coord_t>::max();
-        coord_t maximum_deviation = std::numeric_limits<coord_t>::max();
         if (layer_nr >= 0)
         {
             for (const SliceMeshStorage& mesh : meshes)
@@ -509,10 +515,8 @@ Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const boo
                 }
                 if (mesh.settings.get<ESurfaceMode>("magic_mesh_surface_mode") != ESurfaceMode::NORMAL)
                 {
-                    total = total.unionPolygons(layer.openPolyLines.offsetPolyLine(100));
+                    total = total.unionPolygons(layer.openPolyLines.offsetPolyLine(MM2INT(0.1)));
                 }
-                maximum_resolution = std::min(maximum_resolution, mesh.settings.get<coord_t>("meshfix_maximum_resolution"));
-                maximum_deviation = std::min(maximum_deviation, mesh.settings.get<coord_t>("meshfix_maximum_deviation"));
             }
         }
         if (include_support)
@@ -537,7 +541,6 @@ Polygons SliceDataStorage::getLayerOutlines(const LayerIndex layer_nr, const boo
                 total.add(layer_nr == 0 ? primeTower.outer_poly_first_layer : primeTower.outer_poly);
             }
         }
-        total.simplify(maximum_resolution, maximum_deviation);
         return total;
     }
 }
@@ -636,7 +639,7 @@ std::vector<bool> SliceDataStorage::getExtrudersUsed(LayerIndex layer_nr) const
         { // process brim/skirt
             for (size_t extruder_nr = 0; extruder_nr < Application::getInstance().current_slice->scene.extruders.size(); extruder_nr++)
             {
-                if (skirt_brim[extruder_nr].size() > 0)
+                if (!skirt_brim[extruder_nr].empty())
                 {
                     ret[extruder_nr] = true;
                     continue;

@@ -1,5 +1,5 @@
-//Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <cmath> // sqrt
@@ -14,7 +14,7 @@
 #include "progress/Progress.h"
 #include "utils/logoutput.h"
 #include "settings/AdaptiveLayerHeights.h"
-#include "settings/types/AngleRadians.h"
+#include "settings/types/Angle.h"
 
 namespace cura 
 {

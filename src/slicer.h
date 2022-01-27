@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef SLICER_H
@@ -555,10 +555,16 @@ private:
     /*! Creates the segments and write them into the layers.
     * \param[in] mesh The mesh which is analyzed.
     * \param[in] zbboxes The z part of the bounding boxes of the faces of the mesh.
+    * \param[in] slicing_tolderance Slicing tolerance in order to figure out what happens when vertices are exactly on the slicing boundary.
     * \param[in, out] layers The segments are created here.
     */
-    static void buildSegments(const Mesh& mesh, const std::vector<std::pair<int32_t, int32_t>> &zbboxes,
-        std::vector<SlicerLayer>& layers);
+    static void buildSegments
+    (
+        const Mesh& mesh,
+        const std::vector<std::pair<int32_t, int32_t>> &zbboxes,
+        const SlicingTolerance& slicing_tolerance,
+        std::vector<SlicerLayer>& layers
+    );
 
 };
 

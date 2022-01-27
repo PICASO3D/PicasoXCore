@@ -1,5 +1,5 @@
 //Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <gtest/gtest.h>
@@ -124,6 +124,15 @@ namespace cura
         box.include(AABB(Point(7, 9), Point(8, 10)));
 
         EXPECT_TRUE(box.contains(Point(6, 9))) << "The expanded (via include/other) box should contain a point in the expanded area.";
+
+        const Point a(2, 2);
+        const Point b(5, 10);
+        AABB box2(a, b);
+        AABB empty;
+        box2.include(empty);
+
+        EXPECT_EQ(box2.min, a) << "Inclusion of an 'empty' or negative box should not change the minimum of the original.";
+        EXPECT_EQ(box2.max, b) << "Inclusion of an 'empty' or negative box should not change the maximum of the original.";
     }
 
     TEST(AABBTest, TestExpand)

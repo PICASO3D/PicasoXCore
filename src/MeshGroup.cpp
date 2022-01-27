@@ -1,5 +1,5 @@
 //Copyright (C) 2020 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <string.h>
@@ -281,6 +281,7 @@ bool loadMeshIntoMeshGroup(MeshGroup* meshgroup, const char* filename, const FMa
             return true;
         }
     }
+    logWarning("Unable to recognize the extension of the file. Currently only .stl and .STL are supported.");
     return false;
 }
 

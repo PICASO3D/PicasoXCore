@@ -1,5 +1,5 @@
-//Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2020 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <stdio.h>
@@ -724,7 +724,7 @@ ClosePolygonResult SlicerLayer::findPolygonPointClosestTo(Point input)
                 if (distOnLine >= 0 && distOnLine <= lineLength)
                 {
                     Point q = p0 + pDiff * distOnLine / lineLength;
-                    if (shorterThen(q - input, 100))
+                    if (shorterThen(q - input, MM2INT(0.1)))
                     {
                         ret.polygonIdx = n;
                         ret.pointIdx = i;
@@ -782,9 +782,7 @@ void SlicerLayer::makePolygons(const Mesh* mesh)
     polygons.erase(it, polygons.end());
 
     //Finally optimize all the polygons. Every point removed saves time in the long run.
-    const coord_t line_segment_resolution = mesh->settings.get<coord_t>("meshfix_maximum_resolution");
-    const coord_t line_segment_deviation = mesh->settings.get<coord_t>("meshfix_maximum_deviation");
-    polygons.simplify(line_segment_resolution, line_segment_deviation);
+    polygons.simplify();
 
     polygons.removeDegenerateVerts(); // remove verts connected to overlapping line segments
 }
@@ -809,7 +807,7 @@ Slicer::Slicer(Mesh* i_mesh, const coord_t thickness, const size_t slice_layer_c
     std::vector<std::pair<int32_t, int32_t>> zbbox = buildZHeightsForFaces(*mesh);
 
 
-    buildSegments(*mesh, zbbox, layers);
+    buildSegments(*mesh, zbbox, slicing_tolerance, layers);
 
     log("slice of mesh took %.3f seconds\n", slice_timer.restart());
 
@@ -817,22 +815,29 @@ Slicer::Slicer(Mesh* i_mesh, const coord_t thickness, const size_t slice_layer_c
     log("slice make polygons took %.3f seconds\n", slice_timer.restart());
 }
 
-void Slicer::buildSegments(const Mesh& mesh, const std::vector<std::pair<int32_t, int32_t>> &zbbox,
-    std::vector<SlicerLayer>& layers)
+void Slicer::buildSegments
+(
+    const Mesh& mesh,
+    const std::vector<std::pair<int32_t, int32_t>> &zbbox,
+    const SlicingTolerance& slicing_tolerance,
+    std::vector<SlicerLayer>& layers
+)
 {
     // OpenMP
-#pragma omp parallel for default(none) shared(mesh, zbbox, layers)
+#pragma omp parallel for default(none) shared(mesh, zbbox, slicing_tolerance, layers)
     // Use a signed type for the loop counter so MSVC compiles (because it uses OpenMP 2.0, an old version).
     for (int layer_nr = 0; layer_nr < static_cast<int>(layers.size()); layer_nr++)
     {
-        int32_t z = layers[layer_nr].z;
+        const int32_t& z = layers[layer_nr].z;
         layers[layer_nr].segments.reserve(100);
 
         // loop over all mesh faces
         for (unsigned int mesh_idx = 0; mesh_idx < mesh.faces.size(); mesh_idx++)
         {
             if ((z < zbbox[mesh_idx].first) || (z > zbbox[mesh_idx].second))
-                 continue;
+            {
+                continue;
+            }
 
             // get all vertices per face
             const MeshFace& face = mesh.faces[mesh_idx];
@@ -844,6 +849,14 @@ void Slicer::buildSegments(const Mesh& mesh, const std::vector<std::pair<int32_t
             Point3 p0 = v0.p;
             Point3 p1 = v1.p;
             Point3 p2 = v2.p;
+
+            // Compensate for points exactly on the slice-boundary, except for 'inclusive', which already handles this correctly.
+            if (slicing_tolerance != SlicingTolerance::INCLUSIVE)
+            {
+                p0.z += static_cast<int>(p0.z == z);
+                p1.z += static_cast<int>(p1.z == z);
+                p2.z += static_cast<int>(p2.z == z);
+            }
 
             SlicerSegment s;
             s.endVertex = nullptr;
@@ -949,7 +962,7 @@ std::vector<SlicerLayer> Slicer::buildLayersWithHeight(size_t slice_layer_count,
     layers_res.resize(slice_layer_count);
 
     // set (and initialize compensation for) initial layer, depending on slicing mode
-    layers_res[0].z = std::max(0LL, initial_layer_thickness - thickness);
+    layers_res[0].z = slicing_tolerance == SlicingTolerance::INCLUSIVE ? 0 : std::max(0LL, initial_layer_thickness - thickness);
     coord_t adjusted_layer_offset = initial_layer_thickness;
     if (use_variable_layer_heights)
     {
@@ -1027,7 +1040,7 @@ void Slicer::makePolygons(Mesh& mesh, SlicingTolerance slicing_tolerance, std::v
 
         if (xy_offset != 0)
         {
-            layers_ref[layer_nr].polygons = layers_ref[layer_nr].polygons.offset(xy_offset);
+            layers_ref[layer_nr].polygons = layers_ref[layer_nr].polygons.offset(xy_offset, ClipperLib::JoinType::jtRound);
         }
     }
 

@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef PATH_PLANNING_G_CODE_PATH_H
@@ -35,6 +35,7 @@ public:
     Ratio flow; //!< A type-independent flow configuration (used for wall overlap compensation)
     Ratio speed_factor; //!< A speed factor that is multiplied with the travel speed. This factor can be used to change the travel speed.
     bool retract; //!< Whether the path is a move path preceded by a retraction move; whether the path is a retracted move path. 
+    bool unretract_before_last_travel_move; //!< Whether the last move of the path should be preceded by an unretraction. Used to unretract in the last travel move before an outer wall
     bool perform_z_hop; //!< Whether to perform a z_hop in this path, which is assumed to be a travel path.
     bool perform_prime; //!< Whether this path is preceded by a prime (blob)
     bool skip_agressive_merge_hint; //!< Wheter this path needs to skip merging if any travel paths are in between the extrusions.

@@ -1,5 +1,5 @@
-//Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "SubDivCube.h"
@@ -7,7 +7,7 @@
 #include <functional>
 
 #include "../sliceDataStorage.h"
-#include "../settings/types/AngleRadians.h" //For the infill angle.
+#include "../settings/types/Angle.h" //For the infill angle.
 #include "../utils/math.h"
 #include "../utils/polygonUtils.h"
 

@@ -1,14 +1,15 @@
 //Copyright (C) 2017 Tim Kuipers
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef INFILL_SIERPINSKI_FILL_PROVIDER_H
 #define INFILL_SIERPINSKI_FILL_PROVIDER_H
 
+#include <optional>
+
 #include "SierpinskiFill.h"
 #include "../settings/EnumSettings.h" //For EFillMethod.
-#include "../utils/optional.h"
 
 namespace cura
 {

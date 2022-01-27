@@ -1,5 +1,5 @@
 //Copyright (c) 2018 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef DURATION_H
@@ -42,7 +42,7 @@ struct Duration
     };
     Duration operator -(const Duration& other) const
     {
-        return Duration(value + other.value);
+        return Duration(value - other.value);
     };
     Duration& operator +=(const Duration& other)
     {

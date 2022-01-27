@@ -1,5 +1,5 @@
-//Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <gtest/gtest.h>
@@ -57,6 +57,7 @@ public:
         gcode.current_jerk = -1;
         gcode.is_z_hopped = 0;
         gcode.setFlavor(EGCodeFlavor::MARLIN);
+        gcode.bed_temperature = 0;
         gcode.initial_bed_temp = 0;
         gcode.fan_number = 0;
         gcode.total_bounding_box = AABB3D();
@@ -210,6 +211,7 @@ public:
         gcode.is_z_hopped = 0;
         gcode.setFlavor(EGCodeFlavor::MARLIN);
         gcode.initial_bed_temp = 0;
+        gcode.bed_temperature = 0;
         gcode.fan_number = 0;
         gcode.total_bounding_box = AABB3D();
 

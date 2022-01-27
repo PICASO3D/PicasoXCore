@@ -1,4 +1,4 @@
-/** Copyright (C) 2017 Ultimaker - Copyright (c) 2021 PICASO 3D - Released under terms of the AGPLv3 License */
+/** Copyright (C) 2017 Ultimaker - Copyright (c) 2022 PICASO 3D - Released under terms of the AGPLv3 License */
 
 #ifndef UTILS_MACROS_H
 #define UTILS_MACROS_H

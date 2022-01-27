@@ -1,5 +1,5 @@
 // Copyright (c) 2017 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifndef SUPPORT_INFILL_PART_H
@@ -40,7 +40,7 @@ public:
      *
      * \return false if the area is too small and no insets and infill area can be generated, otherwise true.
      */
-    bool generateInsetsAndInfillAreas();
+    bool generateInsetsAndInfillAreas(const coord_t max_resolution, const coord_t max_deviation);
 
     const Polygons& getInfillArea() const;
 

@@ -1,5 +1,5 @@
-//Copyright (c) 2019 Ultimaker B.V.
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2020 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include "polygon.h"
@@ -84,7 +84,7 @@ bool Polygons::empty() const
 
 Polygons Polygons::approxConvexHull(int extra_outset)
 {
-    constexpr int overshoot = 100000; //10cm (hard-coded value).
+    constexpr int overshoot = MM2INT(100); //10cm (hard-coded value).
 
     Polygons convex_hull;
     //Perform the offset for each polygon one at a time.
@@ -248,6 +248,20 @@ Polygons Polygons::intersectionPolyLines(const Polygons& polylines) const
     Polygons ret;
     ret.addPolyTreeNodeRecursive(result);
     return ret;
+}
+
+Polygons& Polygons::cut(const Polygons& tool)
+{
+    ClipperLib::PolyTree interior_segments_tree;
+    tool.lineSegmentIntersection(*this, interior_segments_tree);
+    ClipperLib::Paths interior_segments;
+    ClipperLib::OpenPathsFromPolyTree(interior_segments_tree, interior_segments);
+    this->clear();
+    for (const std::vector<ClipperLib::IntPoint>& interior_segment : interior_segments)
+    {
+        this->addLine(interior_segment[0], interior_segment[1]);
+    }
+    return *this;
 }
 
 coord_t Polygons::polyLineLength() const
@@ -513,56 +527,63 @@ void Polygons::removeEmptyHoles_processPolyTreeNode(const ClipperLib::PolyNode& 
 
 void Polygons::removeSmallAreas(const double min_area_size, const bool remove_holes)
 {
-    std::vector<ConstPolygonRef> outlines_removed;
-    std::vector<size_t> small_hole_indices;
-    Polygons& thiss = *this;
-    for(size_t i = 0; i < size(); i++)
+    auto new_end = paths.end();
+    if (remove_holes)
     {
-        double area = INT2MM(INT2MM(thiss[i].area()));
-        // holes have negative area and small holes will be ignored unless remove_holes is true
-        // or the hole is contained within an outline that is itself smaller in area than the threshold
-        if (fabs(area) < min_area_size)
+        for (auto it = paths.begin(); it < new_end; it++)
         {
-            if (!remove_holes)
+            // All polygons smaller than target are removed by replacing them with a polygon from the back of the vector
+            if (fabs(INT2MM2(ClipperLib::Area(*it))) < min_area_size)
             {
-                if (area > 0)
-                {
-                    // remember this outline has been removed so we can later check if it contains any holes that also need to be removed
-                    outlines_removed.push_back(thiss[i]);
-                }
-                else
-                {
-                    // remember this small hole so we can later check if it is contained within an outline that has been removed
-                    small_hole_indices.push_back(i);
-                }
-            }
-            // the polygon area is below the threshold, remove it if it is an outline or we are removing holes as well as outlines
-            if (area > 0 || remove_holes)
-            {
-                remove(i);
-                i -= 1;
+                new_end--;
+                *it = std::move(*new_end);
+                it--; // wind back the iterator such that the polygon just swaped in is checked next
             }
         }
     }
-    if (outlines_removed.size() > 0 && small_hole_indices.size() > 0)
+    else
     {
-        size_t num_holes_removed = 0;
-        // now remove any holes that are inside outlines that have been removed
-        for (size_t small_hole_index : small_hole_indices)
-        {
-            const size_t hole_index = small_hole_index - num_holes_removed; // adjust index to account for removed holes
-            // if hole polygon's first point is inside a removed polygon, remove the hole polygon also
-            for (ConstPolygonRef removed_outline : outlines_removed)
+        // For each polygon, computes the signed area, move small outlines at the end of the vector and keep references on small holes
+        std::vector<PolygonRef> small_holes;
+        for (auto it = paths.begin(); it < new_end; it++) {
+            double area = INT2MM2(ClipperLib::Area(*it));
+            if (fabs(area) < min_area_size)
             {
-                if (removed_outline.inside(thiss[hole_index][0]))
+                if (area >= 0)
                 {
-                    remove(hole_index);
-                    ++num_holes_removed;
+                    new_end--;
+                    if (it < new_end) {
+                        std::swap(*new_end, *it);
+                        it--;
+                    }
+                    else
+                    { // Don't self-swap the last Path
+                        break;
+                    }
+                }
+                else
+                {
+                    small_holes.push_back(*it);
+                }
+            }
+        }
+
+        // Removes small holes that have their first point inside one of the removed outlines
+        // Iterating in reverse ensures that unprocessed small holes won't be moved
+        const auto removed_outlines_start = new_end;
+        for (auto hole_it = small_holes.rbegin(); hole_it < small_holes.rend(); hole_it++)
+        {
+            for (auto outline_it = removed_outlines_start; outline_it < paths.end(); outline_it++)
+            {
+                if (PolygonRef(*outline_it).inside(*hole_it->begin())) {
+                    new_end--;
+                    **hole_it = std::move(*new_end);
                     break;
                 }
             }
         }
     }
+    paths.resize(new_end - paths.begin());
 }
 
 Polygons Polygons::toPolygons(ClipperLib::PolyTree& poly_tree)
@@ -707,7 +728,7 @@ bool ConstPolygonRef::smooth_corner_complex(const Point p1, ListPolyIt& p0_it, L
         if (success)
         {
 #ifdef ASSERT_INSANE_OUTPUT
-            assert(vSize(new_p0) < 400000);
+            assert(new_p0.X < 400000 && new_p0.Y < 400000);
 #endif // #ifdef ASSERT_INSANE_OUTPUT
             p0_it = ListPolyIt::insertPointNonDuplicate(p0_2_it, p0_it, new_p0);
         }
@@ -736,7 +757,7 @@ bool ConstPolygonRef::smooth_corner_complex(const Point p1, ListPolyIt& p0_it, L
         if (success)
         {
 #ifdef ASSERT_INSANE_OUTPUT
-            assert(vSize(new_p2) < 400000);
+            assert(new_p2.X < 400000 && new_p2.Y < 400000);
 #endif // #ifdef ASSERT_INSANE_OUTPUT
             p2_it = ListPolyIt::insertPointNonDuplicate(p2_it, p2_2_it, new_p2);
         }

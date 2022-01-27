@@ -1,4 +1,4 @@
-//Copyright (c) 2021 PICASO 3D
+//Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #include <sstream>
@@ -29,7 +29,7 @@ void PicasoHoneyCombInfill::generateHoneyCombInfill(Polygons& result_lines, coor
 	*/
 
 	const Polygons outline = in_outline.offset(outline_offset);
-	const AABB outline_bounding_box(outline.offset(line_distance));
+	//const AABB outline_bounding_box(outline.offset(line_distance));
 
 	HexPattern m = HexPattern();
 	m.distance = line_distance;
