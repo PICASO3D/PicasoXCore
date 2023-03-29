@@ -1,13 +1,14 @@
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "ListPolyIt.h"
+#include "utils/ListPolyIt.h"
 
 #include <cmath> // isfinite
 #include <sstream> // ostream
 
-#include "AABB.h" // for debug output svg html
-#include "SVG.h"
+#include "utils/AABB.h" // for debug output svg html
+#include "utils/SVG.h"
 
 namespace cura 
 {
@@ -31,8 +32,7 @@ void ListPolyIt::convertPolygonToList(ConstPolygonRef poly, ListPolygon& result)
     {
         result.push_back(p);
 #ifdef DEBUG
-        // usually polygons shouldn't have such degenerate verts
-        // in PolygonProximityLinker (where this function is (also) used) it is
+        // usually polygons shouldn't have such degenerate verts. It is
         // required to not have degenerate verts, because verts are mapped
         // to links, but if two different verts are at the same place the mapping fails.
         assert(p != last);

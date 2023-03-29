@@ -1,4 +1,4 @@
-//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -45,6 +45,7 @@ PrimeTower::PrimeTower()
     enabled = scene.current_mesh_group->settings.get<bool>("prime_tower_enable")
            && scene.current_mesh_group->settings.get<coord_t>("prime_tower_min_volume") > 10
            && scene.current_mesh_group->settings.get<coord_t>("prime_tower_size") > 10;
+    would_have_actual_tower = enabled;  // Assume so for now.
 
     extruder_count = scene.extruders.size();
     extruder_order.resize(extruder_count);
@@ -72,7 +73,7 @@ void PrimeTower::generateGroundpoly()
     const Settings& mesh_group_settings = Application::getInstance().current_slice->scene.current_mesh_group->settings;
     const coord_t tower_size = mesh_group_settings.get<coord_t>("prime_tower_size");
     
-    const Settings& brim_extruder_settings = mesh_group_settings.get<ExtruderTrain&>("adhesion_extruder_nr").settings;
+    const Settings& brim_extruder_settings = mesh_group_settings.get<ExtruderTrain&>("skirt_brim_extruder_nr").settings;
     const bool has_raft = (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT);
     const bool has_prime_brim = mesh_group_settings.get<bool>("prime_tower_brim_enable");
     const coord_t offset = (has_raft || ! has_prime_brim) ? 0 :
@@ -80,28 +81,21 @@ void PrimeTower::generateGroundpoly()
         brim_extruder_settings.get<coord_t>("skirt_brim_line_width") *
         brim_extruder_settings.get<Ratio>("initial_layer_line_width_factor");
 
-    PolygonRef p = outer_poly.newPoly();
-    int tower_distance = 0; 
     const coord_t x = mesh_group_settings.get<coord_t>("prime_tower_position_x") - offset;
     const coord_t y = mesh_group_settings.get<coord_t>("prime_tower_position_y") - offset;
     const coord_t tower_radius = tower_size / 2;
-    for (unsigned int i = 0; i < CIRCLE_RESOLUTION; i++)
-    {
-        const double angle = (double) i / CIRCLE_RESOLUTION * 2 * M_PI; //In radians.
-        p.add(Point(x - tower_radius + tower_distance + cos(angle) * tower_radius,
-                    y + tower_radius + tower_distance + sin(angle) * tower_radius));
-    }
+    outer_poly.add(PolygonUtils::makeCircle(Point(x - tower_radius, y + tower_radius), tower_radius, TAU / CIRCLE_RESOLUTION));
     middle = Point(x - tower_size / 2, y + tower_size / 2);
 
-    post_wipe_point = Point(x + tower_distance - tower_size / 2, y + tower_distance + tower_size / 2);
+    post_wipe_point = Point(x - tower_size / 2, y + tower_size / 2);
 
     outer_poly_first_layer = outer_poly.offset(offset);
 }
 
 void PrimeTower::generatePaths(const SliceDataStorage& storage)
 {
-    enabled &= storage.max_print_height_second_to_last_extruder >= 0; //Maybe it turns out that we don't need a prime tower after all because there are no layer switches.
-    if (enabled)
+    would_have_actual_tower = storage.max_print_height_second_to_last_extruder >= 0; //Maybe it turns out that we don't need a prime tower after all because there are no layer switches.
+    if (would_have_actual_tower && enabled)
     {
         generatePaths_denseInfill();
         generateStartLocations();
@@ -149,7 +143,6 @@ void PrimeTower::generatePaths_denseInfill()
         {
             //Generate the pattern for the first layer.
             coord_t line_width_layer0 = line_width * scene.extruders[extruder_nr].settings.get<Ratio>("initial_layer_line_width_factor");
-
             ExtrusionMoves& pattern_layer0 = pattern_per_extruder_layer0[extruder_nr];
 
             // Generate a concentric infill pattern in the form insets for the prime tower's first layer instead of using
@@ -177,7 +170,7 @@ void PrimeTower::generateStartLocations()
 
 void PrimeTower::addToGcode(const SliceDataStorage& storage, LayerPlan& gcode_layer, const size_t prev_extruder, const size_t new_extruder) const
 {
-    if (!enabled)
+    if (! (enabled && would_have_actual_tower))
     {
         return;
     }
@@ -187,7 +180,7 @@ void PrimeTower::addToGcode(const SliceDataStorage& storage, LayerPlan& gcode_la
     }
 
     const LayerIndex layer_nr = gcode_layer.getLayerNr();
-    if (layer_nr > storage.max_print_height_second_to_last_extruder + 1)
+    if (layer_nr < 0 || layer_nr > storage.max_print_height_second_to_last_extruder + 1)
     {
         return;
     }

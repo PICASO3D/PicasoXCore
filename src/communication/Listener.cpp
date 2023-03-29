@@ -1,39 +1,39 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
 #ifdef ARCUS
 
 #include <Arcus/Error.h> //To process error codes.
+#include <spdlog/spdlog.h>
 
-#include "Listener.h"
-#include "../utils/logoutput.h"
+#include "communication/Listener.h"
 
 namespace cura
 {
 
-void Listener::stateChanged(Arcus::SocketState::SocketState)
+void Listener::stateChanged(Arcus::SocketState)
 {
-    //Do nothing.
+    // Do nothing.
 }
 
 void Listener::messageReceived()
 {
-    //Do nothing.
+    // Do nothing.
 }
 
 void Listener::error(const Arcus::Error& error)
 {
     if (error.getErrorCode() == Arcus::ErrorCode::Debug)
     {
-        log("%s\n", error.getErrorMessage().c_str());
+        spdlog::debug("{}", error.getErrorMessage());
     }
     else
     {
-        logError("%s\n", error.getErrorMessage().c_str());
+        spdlog::error("{}", error.getErrorMessage());
     }
 }
 
-} //namespace cura
+} // namespace cura
 
-#endif //ARCUS
+#endif // ARCUS

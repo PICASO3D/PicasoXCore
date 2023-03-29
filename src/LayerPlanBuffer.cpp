@@ -1,19 +1,20 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
+
+#include <spdlog/spdlog.h>
 
 #include "Application.h" //To flush g-code through the communication channel.
 #include "ExtruderTrain.h"
 #include "FffProcessor.h"
-#include "gcodeExport.h"
 #include "LayerPlan.h"
 #include "LayerPlanBuffer.h"
-#include "MergeInfillLines.h"
 #include "Slice.h"
 #include "communication/Communication.h" //To flush g-code through the communication channel.
-#include "utils/logoutput.h"
+#include "gcodeExport.h"
 
-namespace cura {
+namespace cura
+{
 
 
 constexpr Duration LayerPlanBuffer::extra_preheat_time;
@@ -62,12 +63,12 @@ LayerPlan* LayerPlanBuffer::processBuffer()
 
 void LayerPlanBuffer::flush()
 {
-    Application::getInstance().communication->flushGCode(); //If there was still g-code in a layer, flush that as a separate layer. Don't want to group them together accidentally.
+    Application::getInstance().communication->flushGCode(); // If there was still g-code in a layer, flush that as a separate layer. Don't want to group them together accidentally.
     if (buffer.size() > 0)
     {
         insertTempCommands(); // insert preheat commands of the very last layer
     }
-    while (!buffer.empty())
+    while (! buffer.empty())
     {
         buffer.front()->writeGCode(gcode);
         Application::getInstance().communication->flushGCode();
@@ -80,9 +81,9 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
 {
     std::optional<std::pair<Point, bool>> new_layer_destination_state = newest_layer->getFirstTravelDestinationState();
 
-    if (!new_layer_destination_state)
+    if (! new_layer_destination_state)
     {
-        logWarning("Layer %d is empty (or it has empty extruder plans). Temperature control and cross layer travel moves might suffer!\n", newest_layer->layer_nr);
+        spdlog::warn("Layer {} is empty (or it has empty extruder plans). Temperature control and cross layer travel moves might suffer!", newest_layer->layer_nr);
         return;
     }
 
@@ -92,32 +93,32 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
     assert(newest_layer->extruder_plans.front().paths[0].points[0] == first_location_new_layer);
 
     // if the last planned position in the previous layer isn't the same as the first location of the new layer, travel to the new location
-    if (!prev_layer->last_planned_position || *prev_layer->last_planned_position != first_location_new_layer)
+    if (! prev_layer->last_planned_position || *prev_layer->last_planned_position != first_location_new_layer)
     {
         const Settings& mesh_group_settings = Application::getInstance().current_slice->scene.current_mesh_group->settings;
         const Settings& extruder_settings = Application::getInstance().current_slice->scene.extruders[prev_layer->extruder_plans.back().extruder_nr].settings;
         prev_layer->setIsInside(new_layer_destination_state->second);
-        const bool force_retract = extruder_settings.get<bool>("retract_at_layer_change") ||
-          (mesh_group_settings.get<bool>("travel_retract_before_outer_wall") && (mesh_group_settings.get<bool>("outer_inset_first") || mesh_group_settings.get<size_t>("wall_line_count") == 1)); //Moving towards an outer wall.
+        const bool force_retract = extruder_settings.get<bool>("retract_at_layer_change")
+                                || (mesh_group_settings.get<bool>("travel_retract_before_outer_wall")
+                                    && (mesh_group_settings.get<InsetDirection>("inset_direction") == InsetDirection::OUTSIDE_IN || mesh_group_settings.get<size_t>("wall_line_count") == 1)); // Moving towards an outer wall.
         prev_layer->final_travel_z = newest_layer->z;
 
-		const EGCodeFlavor gcodeFlavor = mesh_group_settings.get<EGCodeFlavor>("machine_gcode_flavor");
+        // <Picaso z-hop after extruder switch>
+        const EGCodeFlavor gcodeFlavor = mesh_group_settings.get<EGCodeFlavor>("machine_gcode_flavor");
+        if (gcodeFlavor == EGCodeFlavor::PICASO)
+        {
+            // PLX-460 Bugfix Single extruder print
+            const int count_used = newest_layer->getCountPlannedExtruders();
+            if (count_used > 1)
+            {
+                // skip adding last connecting move to layer
+                return;
+            }
+        }
+        // </Picaso z-hop after extruder switch>
 
-		// <Picaso z-hop after extruder switch>
-		if (gcodeFlavor == EGCodeFlavor::PICASO)
-		{
-			// PLX-460 Bugfix Single extruder print
-			const int count_used = newest_layer->getCountPlannedExtruders();
-			if (count_used > 1)
-			{
-				// skip adding last connecting move to layer
-				return;
-			}
-		}
-		// </Picaso z-hop after extruder switch>
-
-        GCodePath &path = prev_layer->addTravel(first_location_new_layer, force_retract);
-        if (force_retract && !path.retract)
+        GCodePath& path = prev_layer->addTravel(first_location_new_layer, force_retract);
+        if (force_retract && ! path.retract)
         {
             // addTravel() won't use retraction if the travel distance is less than retraction minimum travel setting
             // so to avoid blobs when moving to the new layer height, which can occur if the z-axis speed is very slow,
@@ -125,6 +126,9 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
             path.retract = true;
         }
     }
+
+    // If not using travel-specific jerk and acceleration, the layer plan needs to know the jerk/acc of the first extrusion move of the next layer.
+    prev_layer->next_layer_acc_jerk = newest_layer->first_extrusion_acc_jerk;
 }
 
 void LayerPlanBuffer::processFanSpeedLayerTime()
@@ -150,7 +154,7 @@ void LayerPlanBuffer::processFanSpeedLayerTime()
 void LayerPlanBuffer::insertPreheatCommand(ExtruderPlan& extruder_plan_before, const Duration time_after_extruder_plan_start, const size_t extruder_nr, const Temperature temp)
 {
     Duration acc_time = 0.0;
-    for (unsigned int path_idx = extruder_plan_before.paths.size() - 1; int(path_idx) != -1 ; path_idx--)
+    for (unsigned int path_idx = extruder_plan_before.paths.size() - 1; int(path_idx) != -1; path_idx--)
     {
         GCodePath& path = extruder_plan_before.paths[path_idx];
         const Duration time_this_path = path.estimates.getTotalTime();
@@ -211,7 +215,7 @@ Preheat::WarmUpResult LayerPlanBuffer::computeStandbyTempPlan(std::vector<Extrud
 
 void LayerPlanBuffer::insertPreheatCommand_singleExtrusion(ExtruderPlan& prev_extruder_plan, const size_t extruder_nr, const Temperature required_temp)
 {
-    if (!Application::getInstance().current_slice->scene.extruders[extruder_nr].settings.get<bool>("machine_nozzle_temp_enabled"))
+    if (! Application::getInstance().current_slice->scene.extruders[extruder_nr].settings.get<bool>("machine_nozzle_temp_enabled"))
     {
         return;
     }
@@ -237,7 +241,7 @@ void LayerPlanBuffer::handleStandbyTemp(std::vector<ExtruderPlan*>& extruder_pla
             return;
         }
     }
-    logWarning("Warning: Couldn't find previous extruder plan so as to set the standby temperature. Inserting temp command in earliest available layer.\n");
+    spdlog::warn("Couldn't find previous extruder plan so as to set the standby temperature. Inserting temp command in earliest available layer.");
     ExtruderPlan& earliest_extruder_plan = *extruder_plans[0];
     constexpr bool wait = false;
     earliest_extruder_plan.insertCommand(0, extruder, standby_temp, wait);
@@ -248,12 +252,12 @@ void LayerPlanBuffer::insertPreheatCommand_multiExtrusion(std::vector<ExtruderPl
     ExtruderPlan& extruder_plan = *extruder_plans[extruder_plan_idx];
     const size_t extruder = extruder_plan.extruder_nr;
     const Settings& extruder_settings = Application::getInstance().current_slice->scene.extruders[extruder].settings;
-    if (!extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
+    if (! extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
     {
         return;
     }
     double initial_print_temp = extruder_plan.required_start_temperature;
-    
+
     Preheat::WarmUpResult heating_time_and_from_temp = computeStandbyTempPlan(extruder_plans, extruder_plan_idx);
 
     if (heating_time_and_from_temp.total_time_window < extruder_settings.get<Duration>("machine_min_cool_heat_time_window"))
@@ -271,7 +275,7 @@ void LayerPlanBuffer::insertPreheatCommand_multiExtrusion(std::vector<ExtruderPl
     for (unsigned int extruder_plan_before_idx = extruder_plan_idx - 1; int(extruder_plan_before_idx) >= 0; extruder_plan_before_idx--)
     {
         ExtruderPlan& extruder_plan_before = *extruder_plans[extruder_plan_before_idx];
-        assert (extruder_plan_before.extruder_nr != extruder);
+        assert(extruder_plan_before.extruder_nr != extruder);
 
         double time_here = extruder_plan_before.estimates.getTotalTime();
         if (time_here >= time_before_extruder_plan_to_insert)
@@ -289,7 +293,7 @@ void LayerPlanBuffer::insertPreheatCommand_multiExtrusion(std::vector<ExtruderPl
 }
 
 void LayerPlanBuffer::insertTempCommands(std::vector<ExtruderPlan*>& extruder_plans, unsigned int extruder_plan_idx)
-{   
+{
     ExtruderPlan& extruder_plan = *extruder_plans[extruder_plan_idx];
     const size_t extruder = extruder_plan.extruder_nr;
 
@@ -302,7 +306,7 @@ void LayerPlanBuffer::insertTempCommands(std::vector<ExtruderPlan*>& extruder_pl
         const Settings& previous_extruder_settings = Application::getInstance().current_slice->scene.extruders[prev_extruder].settings;
         extruder_plan.prev_extruder_standby_temp = previous_extruder_settings.get<Temperature>("material_standby_temperature");
     }
-    
+
     if (prev_extruder == extruder)
     {
         insertPreheatCommand_singleExtrusion(*prev_extruder_plan, extruder, extruder_plan.required_start_temperature);
@@ -323,16 +327,16 @@ void LayerPlanBuffer::insertTempCommands(std::vector<ExtruderPlan*>& extruder_pl
 
 void LayerPlanBuffer::insertPrintTempCommand(ExtruderPlan& extruder_plan)
 {
-    if (!extruder_plan.extrusion_temperature)
+    if (! extruder_plan.extrusion_temperature)
     {
-        logWarning("Empty extruder plan detected! Discarding extrusion temperature command.\n");
+        spdlog::warn("Empty extruder plan detected! Discarding extrusion temperature command.");
         return;
     }
     const double print_temp = *extruder_plan.extrusion_temperature;
 
     const unsigned int extruder = extruder_plan.extruder_nr;
     const Settings& extruder_settings = Application::getInstance().current_slice->scene.extruders[extruder].settings;
-    if (!extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
+    if (! extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
     {
         return;
     }
@@ -345,7 +349,7 @@ void LayerPlanBuffer::insertPrintTempCommand(ExtruderPlan& extruder_plan)
         {
             GCodePath& path = extruder_plan.paths[path_idx];
             heated_pre_travel_time += path.estimates.getTotalTime();
-            if (!path.isTravelPath())
+            if (! path.isTravelPath())
             {
                 break;
             }
@@ -361,7 +365,7 @@ void LayerPlanBuffer::insertFinalPrintTempCommand(std::vector<ExtruderPlan*>& ex
     ExtruderPlan& last_extruder_plan = *extruder_plans[last_extruder_plan_idx];
     const size_t extruder = last_extruder_plan.extruder_nr;
     const Settings& extruder_settings = Application::getInstance().current_slice->scene.extruders[extruder].settings;
-    if (!extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
+    if (! extruder_settings.get<bool>("machine_nozzle_temp_enabled"))
     {
         return;
     }
@@ -378,7 +382,7 @@ void LayerPlanBuffer::insertFinalPrintTempCommand(std::vector<ExtruderPlan*>& ex
         for (path_idx = last_extruder_plan.paths.size() - 1; int(path_idx) >= 0; path_idx--)
         {
             GCodePath& path = last_extruder_plan.paths[path_idx];
-            if (!path.isTravelPath())
+            if (! path.isTravelPath())
             {
                 break;
             }
@@ -408,9 +412,9 @@ void LayerPlanBuffer::insertFinalPrintTempCommand(std::vector<ExtruderPlan*>& ex
                 initial_print_temp = prev_extruder_plan.required_start_temperature;
             }
         }
-        if (time_window <= 0.0) //There was a move in this plan but it was length 0.
+        if (time_window <= 0.0) // There was a move in this plan but it was length 0.
         {
-            logWarning("Unnecessary extruder switch detected! SliceDataStorage::getExtrudersUsed should probably be updated.\n");
+            spdlog::warn("Unnecessary extruder switch detected! SliceDataStorage::getExtrudersUsed should probably be updated.");
             return;
         }
         weighted_average_extrusion_temp /= time_window;
@@ -418,9 +422,9 @@ void LayerPlanBuffer::insertFinalPrintTempCommand(std::vector<ExtruderPlan*>& ex
         assert(heated_pre_travel_time != -1 && "heated_pre_travel_time must have been computed; there must have been an extruder plan!");
     }
 
-    if (!initial_print_temp)
+    if (! initial_print_temp)
     { // none of the extruder plans had unretracted moves
-        logWarning("Unnecessary extruder switch detected! Discarding final print temperature commands.\n");
+        spdlog::warn("Unnecessary extruder switch detected! Discarding final print temperature commands.");
         return;
     }
 
@@ -518,9 +522,9 @@ void LayerPlanBuffer::insertTempCommands()
         else
         {
             assert(extruder_plan.estimates.getMaterial() == 0.0 && "No extrusion time should mean no material usage!");
-            if (extruder_settings.get<bool>("material_flow_dependent_temperature")) //Average flow is only used with flow dependent temperature.
+            if (extruder_settings.get<bool>("material_flow_dependent_temperature")) // Average flow is only used with flow dependent temperature.
             {
-                logWarning("Empty extruder plans detected! Temperature control might suffer.\n");
+                spdlog::warn("Empty extruder plans detected! Temperature control might suffer.");
             }
             avg_flow = 0.0;
         }
@@ -529,8 +533,8 @@ void LayerPlanBuffer::insertTempCommands()
         const Temperature initial_print_temp = extruder_settings.get<Temperature>("material_initial_print_temperature");
         if (initial_print_temp == 0.0 // user doesn't want to use initial print temp feature
             || extruder_settings.get<bool>("machine_extruders_share_heater") // ignore initial print temps when extruders share a heater
-            || !extruder_used_in_meshgroup[extruder] // prime blob uses print temp rather than initial print temp
-            || (overall_extruder_plan_idx > 0 && extruder_plans[overall_extruder_plan_idx - 1]->extruder_nr == extruder  // prev plan has same extruder ..
+            || ! extruder_used_in_meshgroup[extruder] // prime blob uses print temp rather than initial print temp
+            || (overall_extruder_plan_idx > 0 && extruder_plans[overall_extruder_plan_idx - 1]->extruder_nr == extruder // prev plan has same extruder ..
                 && extruder_plans[overall_extruder_plan_idx - 1]->estimates.getTotalUnretractedTime() > 0.0) // and prev extruder plan already heated to printing temperature
         )
         {
@@ -550,7 +554,7 @@ void LayerPlanBuffer::insertTempCommands()
             for (size_t extruder_idx = 0; extruder_idx < scene.extruders.size(); extruder_idx++)
             { // set temperature of the first nozzle, turn other nozzles down
                 const Settings& other_extruder_settings = Application::getInstance().current_slice->scene.extruders[extruder_idx].settings;
-                if (scene.current_mesh_group == scene.mesh_groups.begin()) //First mesh group.
+                if (scene.current_mesh_group == scene.mesh_groups.begin()) // First mesh group.
                 {
                     // override values from GCodeExport::setInitialTemps
                     // the first used extruder should be set to the required temp in the start gcode
@@ -559,7 +563,7 @@ void LayerPlanBuffer::insertTempCommands()
                     {
                         gcode.setInitialTemp(extruder_idx, extruder_plan.extrusion_temperature.value_or(extruder_plan.required_start_temperature));
                     }
-                    else 
+                    else
                     {
                         gcode.setInitialTemp(extruder_idx, other_extruder_settings.get<Temperature>("material_standby_temperature"));
                     }

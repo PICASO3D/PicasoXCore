@@ -1,3 +1,6 @@
+// Copyright (c) 2022 PICASO 3D
+// PicasoXCore is released under the terms of the AGPLv3 or higher
+
 /* MD5
  converted to C++ class by Frank Thilo (thilo@unix-ag.org)
  for bzflag (http://www.bzflag.org)
@@ -31,11 +34,10 @@ documentation and/or software.
 */
 
 /* interface header */
-#include "md5.h"
+#include "utils/md5.h"
 
 /* system implementation headers */
 #include <cstdio>
-
 
 // Constants for MD5Transform routine.
 #define S11 7

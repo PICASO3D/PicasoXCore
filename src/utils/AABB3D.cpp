@@ -1,10 +1,12 @@
-/** Copyright (C) 2016 Ultimaker - Copyright (c) 2022 PICASO 3D - Released under terms of the AGPLv3 License */
+//Copyright (c) 2022 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
+//PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "AABB3D.h"
+#include "utils/AABB3D.h"
 
 #include <limits>
 
-#include "AABB.h"
+#include "utils/AABB.h"
 
 namespace cura
 {

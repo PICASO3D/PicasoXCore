@@ -4,11 +4,11 @@
 #include <sstream>
 #include <algorithm>
 
-#include "PicasoHoneyCombInfill.h"
-#include "../utils/AABB.h"
-#include "../utils/linearAlg2D.h"
-#include "../utils/polygon.h"
-#include "../utils/SVG.h"
+#include "infill/PicasoHoneyCombInfill.h"
+#include "utils/AABB.h"
+#include "utils/linearAlg2D.h"
+#include "utils/polygon.h"
+#include "utils/SVG.h"
 
 namespace cura {
 
@@ -21,15 +21,12 @@ PicasoHoneyCombInfill::PicasoHoneyCombInfill() {
 PicasoHoneyCombInfill::~PicasoHoneyCombInfill() {
 }
 
-void PicasoHoneyCombInfill::generateHoneyCombInfill(Polygons& result_lines, coord_t outline_offset, coord_t infill_line_width, coord_t line_distance, const Polygons& in_outline, coord_t z, int layer_nr, bool simple, AngleDegrees fill_angle)
+void PicasoHoneyCombInfill::generateHoneyCombInfill(Polygons& result_lines, coord_t infill_line_width, coord_t line_distance, const Polygons& in_outline, coord_t z, int layer_nr, bool simple, AngleDegrees fill_angle)
 {
 	/*
 	* Based on slic3r HoneyComb
 	* https://github.com/prusa3d/PrusaSlicer/blob/master/src/libslic3r/Fill/FillHoneycomb.cpp
 	*/
-
-	const Polygons outline = in_outline.offset(outline_offset);
-	//const AABB outline_bounding_box(outline.offset(line_distance));
 
 	HexPattern m = HexPattern();
 	m.distance = line_distance;
@@ -46,7 +43,7 @@ void PicasoHoneyCombInfill::generateHoneyCombInfill(Polygons& result_lines, coor
 	const int angleDegrees = (rotationIndex == 0 ? 0 : (rotationIndex == 1 ? 60 : 120));
 	const double angleRadians = double(angleDegrees + fill_angle) * M_PI / double(180);
 
-	AABB bounding_box(outline);
+	AABB bounding_box(in_outline);
 	{
 		// rotate bounding box according to infill direction
 		Polygon bb_polygon = bounding_box.toPolygon();
@@ -104,7 +101,7 @@ void PicasoHoneyCombInfill::generateHoneyCombInfill(Polygons& result_lines, coor
 		}
 	}
 
-	result = outline.intersectionPolyLines(result);
+	result = in_outline.intersectionPolyLines(result);
 	result_lines = result;
 
 	//std::ostringstream filePath;

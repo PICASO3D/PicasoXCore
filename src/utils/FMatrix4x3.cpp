@@ -1,27 +1,32 @@
-//Copyright (c) 2020 Ultimaker B.V.
-//CuraEngine is released under the terms of the AGPLv3 or higher.
+//Copyright (c) 2022 Ultimaker B.V.
+//Copyright (c) 2022 PICASO 3D
+//PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "FMatrix4x3.h" //The definitions we're implementing.
+#include "utils/FMatrix4x3.h" //The definitions we're implementing.
 
-#include "floatpoint.h" //This matrix gets applied to floating point coordinates.
-#include "IntPoint.h" //Conversion directly into integer-based coordinates.
-#include "../settings/types/Ratio.h" //Scale factor.
+#include "utils/floatpoint.h" //This matrix gets applied to floating point coordinates.
+#include "utils/IntPoint.h" //Conversion directly into integer-based coordinates.
+#include "settings/types/Ratio.h" //Scale factor.
 
 namespace cura
 {
-    
+
 FMatrix4x3 FMatrix4x3::scale(const Ratio scale, const Point3 origin)
 {
+    return FMatrix4x3::scale(scale, scale, scale, origin);
+}
+
+FMatrix4x3 FMatrix4x3::scale(const Ratio scale_x, const Ratio scale_y, const Ratio scale_z, const Point3 origin)
+{
     FMatrix4x3 result;
-    result.m[0][0] = scale; //X scale.
-    result.m[1][1] = scale; //Y scale.
-    result.m[2][2] = scale; //Z scale.
+    result.m[0][0] = scale_x; //X scale.
+    result.m[1][1] = scale_y; //Y scale.
+    result.m[2][2] = scale_z; //Z scale.
 
     //Apply a transformation to scale it away from the origin.
-    const Ratio delta_scale = scale - 1;
-    result.m[3][0] = delta_scale * -origin.x; //Arrived at by manually applying an inverse move, the scale, then a move.
-    result.m[3][1] = delta_scale * -origin.y;
-    result.m[3][2] = delta_scale * -origin.z;
+    result.m[3][0] = (scale_x - 1.0) * -origin.x; //Arrived at by manually applying an inverse move, the scale, then a move.
+    result.m[3][1] = (scale_y - 1.0) * -origin.y;
+    result.m[3][2] = (scale_z - 1.0) * -origin.z;
 
     return result;
 }

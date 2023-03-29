@@ -1,57 +1,58 @@
-//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "ZSeamConfig.h" //The definitions we're implementing.
+#include "settings/ZSeamConfig.h" //The definitions we're implementing.
+#include <spdlog/spdlog.h>
 
 namespace cura
 {
 
-ZSeamConfig::ZSeamConfig()
-    : type(EZSeamType::SHORTEST)
-    , pos(Point(0, 0))
-    , corner_pref(EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE)
-{}
+ZSeamConfig::ZSeamConfig(const EZSeamType type, const Point pos, const EZSeamCornerPrefType corner_pref, const coord_t simplify_curvature)
+: type(type)
+, pos(pos)
+, corner_pref(corner_pref)
+, simplify_curvature(simplify_curvature)
+{
+}
 
-ZSeamConfig::ZSeamConfig(const EZSeamType type, const Point pos, const EZSeamCornerPrefType corner_pref)
-    : type(type)
-    , pos(pos)
-    , corner_pref(corner_pref)
-{}
-
-ZSeamCrossConfig::ZSeamCrossConfig(const SliceMeshStorage& mesh, const bool is_inset0)
-    : is_inset0(is_inset0)
-    , z_seam_cross(mesh.settings.get<EZSeamCross>(is_inset0 ? "z_seam_cross_0" : "z_seam_cross_1"))
-    , start_flow(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_start_flow" : "z_seam_cross_1_start_flow")))
-    , start_speed(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_start_speed" : "z_seam_cross_1_start_speed")))
-    , start_distance(mesh.settings.get<coord_t>(is_inset0 ? "z_seam_cross_0_start_distance" : "z_seam_cross_1_start_distance"))
-    , finish_flow(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_finish_flow" : "z_seam_cross_1_finish_flow")))
-    , finish_speed(static_cast<float>(mesh.settings.get<Ratio>(is_inset0 ? "z_seam_cross_0_finish_speed" : "z_seam_cross_1_finish_speed")))
-    , finish_distance(mesh.settings.get<coord_t>(is_inset0 ? "z_seam_cross_0_finish_distance" : "z_seam_cross_1_finish_distance"))
-{}
+ZSeamCrossConfig::ZSeamCrossConfig(const Settings& settings, const bool outer)
+  : z_seam_cross(settings.get<EZSeamCross>(outer ? "z_seam_cross_0" : "z_seam_cross_1")),
+    start_width(static_cast<float>(settings.get<Ratio>(outer ? "z_seam_cross_0_start_width_multiplier" : "z_seam_cross_1_start_width_multiplier"))),
+    start_distance(settings.get<coord_t>(outer ? "z_seam_cross_0_start_distance" : "z_seam_cross_1_start_distance")),
+    finish_width(static_cast<float>(settings.get<Ratio>(outer ? "z_seam_cross_0_finish_width_multiplier" : "z_seam_cross_1_finish_width_multiplier"))),
+    finish_distance(settings.get<coord_t>(outer ? "z_seam_cross_0_finish_distance" : "z_seam_cross_1_finish_distance"))
+{
+}
 
 
-ZSeamCrossing::ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx)
-    : pA(wall[(wall.size() + start_idx - 1) % wall.size()])
+ZSeamCrossing::ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx, const size_t offset_prev_idx, const size_t offset_next_idx)
+  : pA(wall[(wall.size() + start_idx - 1 - offset_prev_idx) % wall.size()])
     , pB(wall[start_idx])
-    , pC(wall[(start_idx + 1) % wall.size()])
-{}
+    , pC(wall[(wall.size() + start_idx + 1 + offset_next_idx) % wall.size()])
+{
+}
 
-ZSeamCrossing::ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx, const Point& p0)
-    :pA(wall[(wall.size() + start_idx - 1) % wall.size()])
+ZSeamCrossing::ZSeamCrossing(const ConstPolygonRef& wall, const size_t start_idx, const Point& p0, const size_t offset_prev_idx, const size_t offset_next_idx)
+  : pA(wall[(wall.size() + start_idx - 1 - offset_prev_idx) % wall.size()])
     , pB(p0)
-    , pC(wall[start_idx])
-{}
+    , pC(wall[(wall.size() + start_idx + offset_next_idx) % wall.size()])
+{
+}
 
 /*
-*   c
-*    \
-*     \b
-*   ,-`|
-* d`   |
-*      a
-*/
-bool ZSeamCrossing::FindCrossing_Mode_Normal(const ConstPolygonRef& wall, Point& point, coord_t point_start_distance, coord_t point_finish_distance, bool inside)
+ *   c
+ *    \
+ *     \b
+ *   ,-`|
+ * d`   |
+ *      a
+ */
+bool ZSeamCrossing::FindCrossing_Mode_Normal(const ConstPolygonRef& wall,
+                                             Point& point,
+                                             coord_t point_start_distance,
+                                             coord_t point_finish_distance,
+                                             bool inside)
 {
     float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
     Point d = RotateCustomLeft(pA, pB, angle);
@@ -87,20 +88,26 @@ bool ZSeamCrossing::FindCrossing_Mode_Normal(const ConstPolygonRef& wall, Point&
 }
 
 /*
-*   c
-*    \
-*(dbc)\b
-*   ,-`|
-* d`   |
-* (abd)a
-*/
-bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point& point_start, Point& point_end, coord_t point_start_distance, coord_t point_finish_distance, float angle_divider, bool inside)
+ *   c
+ *    \
+ *(dbc)\b
+ *   ,-`|
+ * d`   |
+ * (abd)a
+ */
+bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall,
+                                             Point& point_start,
+                                             Point& point_end,
+                                             coord_t point_start_distance,
+                                             coord_t point_finish_distance,
+                                             float angle_divider,
+                                             bool inside)
 {
     float angle = LinearAlg2D::getAngleLeft(pA, pB, pC) / 2;
     Point d = RotateCustomLeft(pA, pB, angle);
-    //Point d2 = RolAHalfLeft(pC, pB, pA);
+    // Point d2 = RolAHalfLeft(pC, pB, pA);
 
-    // and also half angle 
+    // and also half angle
     angle = LinearAlg2D::getAngleLeft(d, pB, pC) / angle_divider;
     Point dbc = RotateCustomLeft(d, pB, -angle);
 
@@ -117,6 +124,11 @@ bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point&
 
     if (r_bd == 0 || r_dbc == 0 || r_abd == 0)
     {
+        //// <debug>
+        //spdlog::warn("FindCrossing_custom (bd: {}, dbc: {}, abd: {})", r_bd, r_dbc, r_abd);
+        //spdlog::warn("FindCrossing_custom bd(X: {}, Y: {}) dbc(X: {}, Y: {}) abd(X: {}, Y: {})n", b_d.X, b_d.Y, b_dbc.X, b_dbc.Y, b_abd.X, b_abd.Y);
+        //spdlog::warn("FindCrossing_custom pA(X: {}, Y: {}) pB(X: {}, Y: {}) pC(X: {}, Y: {}) angle: {}", pA.X, pA.Y, pB.X, pB.Y, pC.X, pC.Y, angle);
+        //// </debug>
         return false;
     }
 
@@ -148,13 +160,13 @@ bool ZSeamCrossing::FindCrossing_Mode_Custom(const ConstPolygonRef& wall, Point&
 }
 
 /*
-*   result
-*    \
-*     \p0
-* angle|
-*      |
-*      p1
-*/
+ *   result
+ *    \
+ *     \p0
+ * angle|
+ *      |
+ *      p1
+ */
 Point ZSeamCrossing::RotateCustomLeft(const Point& p1, const Point& p0, const float angle)
 {
     float cos_a = cos(angle);
@@ -164,12 +176,11 @@ Point ZSeamCrossing::RotateCustomLeft(const Point& p1, const Point& p0, const fl
     return result;
 }
 
-ZSeamIntersection::ZSeamIntersection(const ConstPolygonRef& wall, const int& start_idx)
-    : wall(wall)
-    , start_idx(start_idx)
-{}
+ZSeamIntersection::ZSeamIntersection(const ConstPolygonRef& wall, const int& start_idx) : wall(wall), start_idx(start_idx)
+{
+}
 
-bool ZSeamIntersection::FindIntersection(const Point& p1, const Point& p2, int& ind_offset, Point& intersection)
+bool ZSeamIntersection::FindIntersection(const Point& p1, const Point& p2, size_t& ind_offset, Point& intersection)
 {
     // optimization for high-poly mesh
     const size_t wall_size = wall.size();
@@ -205,9 +216,13 @@ bool ZSeamIntersection::FindIntersection(const Point& p1, const Point& p2, int& 
 }
 
 /*
-* Find intersection of 2 lines
-*/
-bool ZSeamIntersection::FindIntersection(const Point& start1, const Point& end1, const Point& start2, const Point& end2, Point& intersection)
+ * Find intersection of 2 lines
+ */
+bool ZSeamIntersection::FindIntersection(const Point& start1,
+                                         const Point& end1,
+                                         const Point& start2,
+                                         const Point& end2,
+                                         Point& intersection)
 {
     Point dir1 = end1 - start1;
     Point dir2 = end2 - start2;
@@ -226,7 +241,7 @@ bool ZSeamIntersection::FindIntersection(const Point& start1, const Point& end1,
     float seg2_line1_start = a1 * start2.X + b1 * start2.Y + d1;
     float seg2_line1_end = a1 * end2.X + b1 * end2.Y + d1;
 
-    //no intersection
+    // no intersection
     if (seg1_line2_start * seg1_line2_end >= 0 || seg2_line1_start * seg2_line1_end >= 0)
         return false;
 
@@ -237,31 +252,89 @@ bool ZSeamIntersection::FindIntersection(const Point& start1, const Point& end1,
     return true;
 }
 
-WallSeamCornerPoint::WallSeamCornerPoint(Point point, float flow_multiplier, float speed_multiplier)
-    : point(point)
-    , flow_multiplier(flow_multiplier)
-    , speed_multiplier(speed_multiplier)
-{}
+ /*
+ * Find Point cross p1-p2
+ */
+bool ZSeamIntersection::FindPointCrossLine(const Point& p1, const Point& p2, size_t& ind_offset, Point& cross_point, size_t& cross_distance)
+{
+    // optimization for high-poly mesh
+    const size_t wall_size = wall.size();
+    const size_t count = wall_size > 100 ? 50 : wall_size / 2;
+
+    const Point& p0 = wall[(wall_size + start_idx) % wall_size];
+    if (CheckCrossing(p0, p1, p2, cross_distance))
+    {
+        ind_offset = 0;
+        cross_point = p0;
+        return true;
+    }
+
+    for (size_t offset = 1; offset < count; offset++)
+    {
+        // Positive
+        const Point& pP = wall[(wall_size + start_idx + offset) % wall_size];
+        if (CheckCrossing(pP, p1, p2, cross_distance))
+        {
+            ind_offset = offset;
+            cross_point = pP;
+            return true;
+        }
+        // Negative
+        const Point& pN = wall[(wall_size + start_idx - offset) % wall_size];
+        if (CheckCrossing(pN, p1, p2, cross_distance))
+        {
+            ind_offset = -offset;
+            cross_point = pN;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*
+* Check Point on line between p1-p2
+* https://stackoverflow.com/questions/11907947/how-to-check-if-a-point%20-lies-on-a-line-between-2-other-points
+*/
+bool ZSeamIntersection::CheckCrossing(const Point& current, const Point& p1, const Point& p2, size_t& cross)
+{
+    constexpr size_t check_crossing_epsilon = 20*20;
+    const Point dC = current - p1;
+    const Point dL = p2 - p1;
+
+    /*
+    * cross = 0 -> point on one line
+    */
+    cross = std::abs(dC.X * dL.Y - dC.Y * dL.X);
+
+    return cross < check_crossing_epsilon;
+}
+
+WallSeamCornerPoint::WallSeamCornerPoint(Point point, float width_multiplier)
+  : point(point)
+    , width_multiplier(width_multiplier)
+{
+}
 
 
 WallSeamConfig::WallSeamConfig(int point_idx, Point point_center, EZSeamCross cross_cfg, EZSeamCornerPrefType corner_pref)
-    : point_idx(point_idx)
-    , point_center(point_center)
+  : point_idx(point_idx), point_center(point_center)
     , point_crossing_found(false)
-    , start(WallSeamCornerPoint(Point(0, 0), 0.5, 1.0))
-    , finish(WallSeamCornerPoint(Point(0, 0), 0.5, 1.0))
+    , start(WallSeamCornerPoint(Point(0, 0), 0.5))
+    , finish(WallSeamCornerPoint(Point(0, 0), 0.5))
     , cross_cfg(cross_cfg)
     , corner_pref(corner_pref)
-{}
+{
+}
 
 WallSeamConfig::WallSeamConfig(int point_idx, Point point_center, WallSeamCornerPoint& start, WallSeamCornerPoint& finish, EZSeamCross cross_cfg, EZSeamCornerPrefType corner_pref)
-    : point_idx(point_idx)
-    , point_center(point_center)
+  : point_idx(point_idx), point_center(point_center)
     , point_crossing_found(true)
     , start(start)
     , finish(finish)
     , cross_cfg(cross_cfg)
     , corner_pref(corner_pref)
-{}
-
+{
 }
+
+} //Cura namespace.

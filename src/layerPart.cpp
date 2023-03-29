@@ -1,4 +1,4 @@
-//Copyright (c) 2018 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
@@ -8,8 +8,10 @@
 #include "settings/EnumSettings.h" //For ESurfaceMode.
 #include "settings/Settings.h"
 #include "progress/Progress.h"
+#include "utils/ThreadPool.h"
 
-#include "utils/SVG.h" // debug output
+#include "utils/PolylineStitcher.h"
+#include "utils/Simplify.h" //Simplifying the layers after creating them.
 
 /*
 The layer-part creation step is the first step in creating actual useful data for 3D printing.
@@ -27,7 +29,9 @@ namespace cura {
 
 void createLayerWithParts(const Settings& settings, SliceLayer& storageLayer, SlicerLayer* layer)
 {
-    storageLayer.openPolyLines = layer->openPolylines;
+    PolylineStitcher<Polygons, Polygon, Point>::stitch(layer->openPolylines, storageLayer.openPolyLines, layer->polygons, settings.get<coord_t>("wall_line_width_0"));
+
+    storageLayer.openPolyLines = Simplify(settings).polyline(storageLayer.openPolyLines);
 
     const bool union_all_remove_holes = settings.get<bool>("meshfix_union_all_remove_holes");
     if (union_all_remove_holes)
@@ -56,7 +60,7 @@ void createLayerWithParts(const Settings& settings, SliceLayer& storageLayer, Sl
         result = layer->polygons.splitIntoParts(union_layers || union_all_remove_holes);
     }
     const coord_t hole_offset = settings.get<coord_t>("hole_xy_offset");
-    for (auto & part : result)
+    for(auto & part : result)
     {
         storageLayer.parts.emplace_back();
         if (hole_offset != 0)
@@ -93,20 +97,12 @@ void createLayerParts(SliceMeshStorage& mesh, Slicer* slicer)
     const auto total_layers = slicer->layers.size();
     assert(mesh.layers.size() == total_layers);
 
-    // OpenMP compatibility fix for GCC <= 8 and GCC >= 9
-    // See https://www.gnu.org/software/gcc/gcc-9/porting_to.html, section "OpenMP data sharing"
-#if defined(__GNUC__) && __GNUC__ <= 8 && !defined(__clang__)
-    #pragma omp parallel for default(none) shared(mesh, slicer) schedule(dynamic)
-#else
-    #pragma omp parallel for default(none) shared(mesh, slicer, total_layers) schedule(dynamic)
-#endif // defined(__GNUC__) && __GNUC__ <= 8
-    // Use a signed type for the loop counter so MSVC compiles (because it uses OpenMP 2.0, an old version).
-    for (int layer_nr = 0; layer_nr < static_cast<int>(total_layers); layer_nr++)
+    cura::parallel_for<size_t>(0, total_layers, [slicer, &mesh](size_t layer_nr)
     {
         SliceLayer& layer_storage = mesh.layers[layer_nr];
         SlicerLayer& slice_layer = slicer->layers[layer_nr];
         createLayerWithParts(mesh.settings, layer_storage, &slice_layer);
-    }
+    });
 
     for (LayerIndex layer_nr = total_layers - 1; layer_nr >= 0; layer_nr--)
     {

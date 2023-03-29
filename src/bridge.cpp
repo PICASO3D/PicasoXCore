@@ -11,18 +11,19 @@
 namespace cura
 {
 
-bool findBridgeAngle(
-	const Settings& settings, 
-	const Polygons& skin_outline, 
-	const SliceDataStorage& storage, 
-	const unsigned layer_nr, 
-	const unsigned bridge_layer,
-	const SupportLayer* support_layer, 
-	Polygons& supported_regions,
+bool bridgeAngle(
+    const Settings& settings, 
+    const Polygons& skin_outline, 
+    const SliceDataStorage& storage, 
+    const unsigned layer_nr, 
+    const unsigned bridge_layer, 
+    const SupportLayer* support_layer, 
+    Polygons& supported_regions,
 	double& result_angle)
 {
-	result_angle = double(0);
+    result_angle = double(0);
 
+    assert(! skin_outline.empty());
     AABB boundary_box(skin_outline);
 
     //To detect if we have a bridge, first calculate the intersection of the current layer with the previous layer.
@@ -124,14 +125,9 @@ bool findBridgeAngle(
         Polygons skin_perimeter_lines;
         for (ConstPolygonRef poly : skin_outline)
         {
-            Point p0 = poly[0];
-            for (unsigned i = 1; i < poly.size(); ++i)
-            {
-                Point p1 = poly[i];
-                skin_perimeter_lines.addLine(p0, p1);
-                p0 = p1;
-            }
-            skin_perimeter_lines.addLine(p0, poly[0]);
+            if (poly.empty()) continue;
+            skin_perimeter_lines.add(poly);
+            skin_perimeter_lines.back().emplace_back(poly.front());
         }
 
         Polygons skin_perimeter_lines_over_air(air_below.intersectionPolyLines(skin_perimeter_lines));
@@ -182,7 +178,7 @@ bool findBridgeAngle(
         //Skip internal holes
         if (!islands[n].orientation())
             continue;
-        double area = fabs(islands[n].area());
+        double area = std::abs(islands[n].area());
         if (area > area1)
         {
             if (area1 > area2)
@@ -206,8 +202,8 @@ bool findBridgeAngle(
     Point center1 = islands[idx1].centerOfMass();
     Point center2 = islands[idx2].centerOfMass();
 
-	result_angle = angle(center2 - center1);
-	return true;
+    result_angle = angle(center2 - center1);
+    return true;
 }
 
 }//namespace cura

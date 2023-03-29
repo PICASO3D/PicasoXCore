@@ -1,10 +1,10 @@
-//Copyright (c) 2021 Ultimaker B.V.
+//Copyright (c) 2022 Ultimaker B.V.
 //Copyright (c) 2022 PICASO 3D
 //PicasoXCore is released under the terms of the AGPLv3 or higher
 
-#include "LightningTreeNode.h"
+#include "infill/LightningTreeNode.h"
 
-#include "../utils/linearAlg2D.h"
+#include "utils/linearAlg2D.h"
 
 using namespace cura;
 
@@ -192,7 +192,7 @@ bool LightningTreeNode::realign
                 bool connect_branch = child->realign(outlines, outline_locator, rerooted_parts);
                 if (connect_branch && PolygonUtils::lineSegmentPolygonsIntersection(child->p, p, outlines, outline_locator, coll, outline_locator.getCellSize() * 2))
                 {
-                    child->last_grounding_location.reset(); // child->last_grounding_location = coll;
+                    child->last_grounding_location.reset();
                     child->parent.reset();
                     child->is_root = true;
                     rerooted_parts.push_back(child);
